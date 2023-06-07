@@ -1,0 +1,9 @@
+/dev/gpt/homewall-top        /           ufs    ro                                    0  1
+/dev/gpt/homewall-home       /home       ufs    ro                                    0  2
+/dev/gpt/homewall-usr_local  /usr/local  ufs    ro                                    0  2
+/dev/gpt/homewall-var        /var        ufs    rw                                    0  2
+/dev/gpt/homewall-jails_base /jails/base ufs    ro                                    0  2
+/dev/gpt/homewall-jails_thin /jails/thin ufs    ro                                    0  2
+tmpfs                        /var/logs   tmpfs  rw,nosuid,noexec,mode=00750           0  0
+tmpfs                        /var/run    tmpfs  rw,nosuid,noexec,size=96k,mode=00750  0  0
+tmpfs                        /tmp        tmpfs  rw,nosuid,noexec,size=96m,mode=01777  0  0

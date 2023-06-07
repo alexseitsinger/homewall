@@ -1,0 +1,9 @@
+#
+# /etc/pf.d/tables/PORTS.HTTP
+#
+# http: 80
+# https: 443
+#
+
+80
+443

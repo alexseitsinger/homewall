@@ -1,0 +1,17 @@
+#!/bin/sh -
+
+builtin . /etc/shrc
+
+_create_nics() {
+  #create-jail-epair homewall ext0 group egress;
+  #create-jail-epair homewall int0 inet 192.168.1.254/24 group ingress;
+
+  # Uncomment to emulate hardware on test computer.
+  create-jail-epair homewall ale0;
+  create-jail-epair homewall re0;
+}
+
+_main() {
+  _create_nics || return 1
+}
+_main;

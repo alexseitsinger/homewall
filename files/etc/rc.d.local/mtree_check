@@ -1,0 +1,40 @@
+#!/bin/sh -
+
+# PROVIDE: mtree_check
+# REQUIRE: FILESYSTEMS
+
+. /etc/rc.subr;
+. /etc/shrc;
+
+name='mtree_check';
+desc='Compare current filesystem state to saved specifications.';
+rcvar='mtree_check_enable';
+start_cmd='_start';
+stop_cmd='_stop';
+
+_is_enabled() {
+    case "${mtree_check_enable:-NO}" in
+        [Yy][Ee][Ss]) return 0;;
+        *) return 1;;
+    esac
+}
+
+_stop() {
+    # ...
+}
+
+_start() {
+    local SPECDIR="$mtree_check_specdir";
+    if [ ! -d "$SPECDIR" ]; then
+        notdir "$SPECDIR"; return 127;
+    fi
+   
+    local DP='';
+    local DPS="$mtree_check_targets"; 
+    local IFS=' '; for DP in ${DPS}; do
+        # run-mtree-check-on-$DIR
+    done
+}
+
+load_rc_config "$name";
+run_rc_command "$1";

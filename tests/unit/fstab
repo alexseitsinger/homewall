@@ -1,0 +1,42 @@
+#!/bin/sh -
+
+builtin . /etc/shrc;
+
+_main() {
+  local SYSTEM_DIR=$( sysdir );
+
+  local RC=0;
+  local FSTAB="${SYSTEM_DIR}/files/etc/fstab";
+
+  local L1='/dev/gpt/homewall-top / ufs ro 0 1';
+  local L2='/dev/gpt/homewall-home /home ufs ro 0 2';
+  local L3='/dev/gpt/homewall-usr_local /usr/local ufs ro 0 2';
+  local L4='/dev/gpt/homewall-var /var ufs rw 0 2';
+  local L5='/dev/gpt/homewall-jails_base /jails/base ufs ro 0 2';
+  local L6='/dev/gpt/homewall-jails_thin /jails/thin ufs ro 0 2';
+  local L7='tmpfs /var/logs tmpfs rw,nosuid,noexec,mode=00750 0 0';
+  local L8='tmpfs /var/run tmpfs rw,nosuid,noexec,size=96k,mode=00750 0 0';
+  local L9='tmpfs /tmp tmpfs rw,nosuid,noexec,size=96m,mode=01777 0 0';
+
+  ## ASSERTIONS-BEGIN ##
+
+  assert "${FSTAB} exists" test -f "$FSTAB" || RC=1
+  assert "${FSTAB} is owned by root:wheel" is-owner "$FSTAB" root:wheel || RC=1
+  assert "${FSTAB} has the mode u=rw,go=" is-mode "$FSTAB" u=rw,go= || RC=1
+  assert "${FSTAB} has the flag schg" is-flag "$FSTAB" schg || RC=1
+  assert "${FSTAB} contains: ${L1}" is-line-included "$FSTAB" "$L1" || RC=1
+  assert "${FSTAB} contains: ${L2}" is-line-included "$FSTAB" "$L2" || RC=1
+  assert "${FSTAB} contains: ${L3}" is-line-included "$FSTAB" "$L3" || RC=1
+  assert "${FSTAB} contains: ${L4}" is-line-included "$FSTAB" "$L4" || RC=1
+  assert "${FSTAB} contains: ${L5}" is-line-included "$FSTAB" "$L5" || RC=1
+  assert "${FSTAB} contains: ${L6}" is-line-included "$FSTAB" "$L6" || RC=1
+  assert "${FSTAB} contains: ${L7}" is-line-included "$FSTAB" "$L7" || RC=1
+  assert "${FSTAB} contains: ${L8}" is-line-included "$FSTAB" "$L8" || RC=1
+  assert "${FSTAB} contains: ${L9}" is-line-included "$FSTAB" "$L9" || RC=1
+
+  ## ASSERTIONS-END ##
+
+  return "$RC";
+}
+_main;
+

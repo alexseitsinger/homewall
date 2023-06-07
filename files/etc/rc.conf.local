@@ -1,0 +1,45 @@
+#
+# /etc/rc.conf.local
+# homewall.home.lan
+#
+
+hostname="homewall.home.lan"
+
+pf_rules="/etc/pf.d/pf.conf"
+
+dhclient_ext0_enable="YES"
+
+dhcrelay_ipv4_enable="NO"
+
+# Change these for differnet hardwares, okay?
+ifconfig_ale0_name="ext0"
+ifconfig_ext0="DHCP group egress"
+
+ifconfig_re0_name="int0"
+ifconfig_int0="inet 192.168.1.253/24 group ingress"
+
+gateway_enable="YES"
+
+kern_securelevel="3"
+#kern_securelevel_enable="YES"
+
+#root_rw_mount="NO"
+
+cloned_interfaces="lo1"
+
+#jail_list="nginx"
+#jail_enable="YES"
+
+newsyslog_logdirs_conf="/files/etc/newsyslog.conf"
+newsyslog_logdirs_tmpfs_hostnames="${hostname}"
+newsyslog_logdirs_enable="YES"
+
+#accounting_enable="YES"
+
+nginx_flags="-q -e /var/logs/nginx-error"
+nginx_enable="YES"
+
+node_names="homewall"
+node_homewall_directory="/usr/local/www/homewall"
+node_homewall_script="express.cjs"
+node_enable="YES"

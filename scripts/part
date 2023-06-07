@@ -1,0 +1,28 @@
+#!/bin/sh -
+
+builtin . /etc/shrc;
+
+_main() {
+    local DEV="$1";
+    if [ -z "$DEV" ]; then
+        noarg '<$1: DEV>'; return 127;
+    fi
+    if [ ! -c "$DEV" ]; then
+        notfound "$DEV"; return 127;
+    fi
+
+    local NAME=$( sysname );
+    local SIZE=1G;
+
+    /sbin/gpart create -s GPT ${DEV} || return 127
+    /sbin/gpart bootcode -b /boot/pmbr ${DEV} || return 127
+    /sbin/gpart add -b 40 -s 472 -t freebsd-boot -l ${NAME}-boot ${DEV} || return 127
+    /sbin/gpart bootcode -p /boot/gptboot -i 1 ${DEV} || return 127
+    /sbin/gpart add -t freebsd-ufs -l ${NAME}-top -s ${SIZE} ${DEV} || return 127
+    /sbin/gpart add -t freebsd-ufs -l ${NAME}-jails_base -s ${SIZE} ${DEV} || return 1
+    /sbin/gpart add -t freebsd-ufs -l ${NAME}-jails_thin -s 256M ${DEV} || return 1
+    /sbin/gpart add -t freebsd-ufs -l ${NAME}-usr_local -s 256M ${DEV} || return 127
+    /sbin/gpart add -t freebsd-ufs -l ${NAME}-var -s 64M ${DEV} || return 127
+    /sbin/gpart add -t freebsd-ufs -l ${NAME}-home -s 32M ${DEV} || return 127
+}
+_main "$@";

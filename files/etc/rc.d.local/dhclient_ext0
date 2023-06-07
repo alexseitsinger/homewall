@@ -1,0 +1,53 @@
+#!/bin/sh -
+
+# PROVIDE: dhclient_ext0
+# REQUIRE: DAEMON
+
+builtin . /etc/rc.subr;
+
+name='dhclient_ext0';
+desc='DHCP client for ext0';
+rcvar='dhclient_ext0_enable';
+start_cmd='_start';
+stop_cmd='_stop';
+
+_stop() {
+    local LEASE_FILE='/var/run/dhclient.ext0.leases';
+
+    local PID_FILE='/var/run/dhclient.ext0.pid';
+    local PID=$( /bin/cat "$PID_FILE" 2>>/dev/null );
+    if ! /bin/ps "$PID" >>/dev/null 2>&1; then
+        PID=$( /bin/pgrep dhclient );
+    fi
+    if [ -f "$PID_FILE" ]; then
+        /bin/rm -f "$PID_FILE";
+    fi
+    if [ -n "$PID" ]; then
+        /bin/kill "$PID"; 
+        /usr/bin/printf '%s\n' "Stopped ${name}" >>/dev/stderr;
+    else
+        /usr/bin/printf '%s\n' "${name} was already stopped." >>/dev/stderr;
+    fi
+}
+
+_start() {
+    local LEASE_FILE='/var/run/dhclient.ext0.leases';
+
+    local PID_FILE='/var/run/dhclient.ext0.pid';
+    local PID=$( /bin/cat "$PID_FILE" 2>>/dev/null );
+    if ! /bin/ps "$PID" >>/dev/null 2>&1; then
+        PID=$( /bin/pgrep dhclient );
+    fi
+    if [ -z "$PID" ]; then
+        if [ -f "$PID_FILE" ]; then
+            /bin/rm -f "$PID_FILE";
+        fi
+        /sbin/dhclient -b -q -l "$LEASE_FILE" -p "$PID_FILE" ext0;
+        /usr/bin/printf '%s\n' "Started ${name}" >>/dev/stderr;
+    else
+        /usr/bin/printf '%s\n' "${name} was already started." >>/dev/stderr;
+    fi
+}
+
+load_rc_config "$name";
+run_rc_command "$1"

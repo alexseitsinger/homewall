@@ -1,0 +1,265 @@
+#!/bin/sh -
+
+# PROVIDE: trash
+# REQUIRE: FILESYSTEMS
+# KEYWORD: shutdown
+
+builtin . /etc/rc.subr;
+builtin . /etc/shrc;
+
+name='trash';
+desc="mounts tmpfs to ~/.trash and clears each ~/.trash during shutdown";
+rcvar="${name}_enable";
+
+start_cmd="_start";
+stop_cmd="_stop";
+is_enabled_cmd="_is_enabled";
+clear_cmd="_clear_trashdirs";
+create_cmd="_create_trashdirs";
+trashdirs_cmd="_trashdirs";
+users_cmd="_users";
+
+extra_commands="is_enabled clear_trashdirs create_trashdirs trashdirs users";
+
+_is_enabled() {
+    case "${trash_enable:-NO}" in
+        [Yy][Ee][Ss]) return 0;;
+        *) return 1;;
+    esac
+}
+
+_rootdir() {
+    # if THIS==/bin/sh this script wasn't executed.
+    local THIS=$( /bin/realpath "$0" );
+    if [ "$THIS" == "$SHELL" ]; then
+        errmsg "rc.d/trash should be executed, not sourced or evaluated."; return 127;
+    fi
+    local HERE=$( /usr/bin/dirname "$THIS" );
+    local ROOTDIR=$( rootdir "$HERE" );
+    if [ ! -d "$ROOTDIR" ]; then
+        errmsg "Determining the root directory for rc.d/trash failed."; return 127;
+    fi
+    /bin/echo "$ROOTDIR";
+}
+
+_rcvar() {
+    local RCVAR="$1";
+    if [ -z "$RCVAR" ]; then
+        noarg '<$1: RCVAR>'; return 127;
+    fi
+
+    local OUT='';
+    local ROOTDIR=$( _rootdir );
+
+    local RC_CONF=$( normpath "${ROOTDIR}/etc/rc.conf" );
+    if [ -f "$RC_CONF" ]; then
+        OUT=$( /usr/sbin/sysrc -f "$RC_CONF" -qien "$RCVAR" );
+    fi
+    if [ -n "$OUT" ]; then
+        /bin/echo "$OUT"; return 0;
+    fi
+
+    local RC_CONF_LOCAL="${RC_CONF}.local";
+    if [ -f "$RC_CONF_LOCAL" ]; then
+        OUT=$( /usr/sbin/sysrc -f "$RC_CONF_LOCAL" -qien "$RCVAR" );
+    fi
+    if [ -n "$OUT" ]; then
+        /bin/echo "$OUT"; return 0;
+    fi
+
+    errmsg "Retrieving the value of $(orange ${RCVAR}) failed.";
+}
+
+_users() {
+    _rcvar 'trash_users' | /usr/bin/tr ' ' $'\n';
+}
+
+_size() {
+    _rcvar 'trash_size';
+}
+
+_trashdirs() {
+    local ROOTDIR=$( _rootdir );
+    local HOMEDIR=$( normpath "${ROOTDIR}/home" );
+
+    local HOME_ROOT=$( normpath "${ROOTDIR}/root" );
+    local HOME_USER='';
+  
+    local FOUND=$( ( /usr/bin/find "$HOMEDIR" \
+                        -not -path "$HOMEDIR" \
+                        -not -name '.trash' \
+                        -not -name '.off' \
+                        -type d \
+                        -maxdepth 1 \
+                        -exec /bin/realpath {} \; | /usr/bin/sort -hi ) 2>>/dev/null );
+
+    local DP='';
+    local DN='.trash';
+    local IFS=$'\n'; for HOME_USER in ${FOUND}; do
+        normpath "${HOME_USER}/${DN}";
+    done
+    normpath "${HOME_ROOT}/${DN}";
+}
+
+_trashdir() {
+    local UN="$1";
+    if [ -z "$UN" ]; then
+        noarg '<$1: UN>'; return 127;
+    fi
+
+    local ROOTDIR=$( _rootdir );
+    local HOMEDIR=$( normpath "${ROOTDIR}/home" );
+
+    local DP='';
+    local DN='.trash';
+    case "$UN" in
+        root|toor)  DP=$( normpath "${ROOTDIR}/root/${DN}" );;
+        *)          DP=$( normpath "${ROOTDIR}/home/${UN}/${DN}" );;
+    esac
+
+    /bin/echo "$DP";
+}
+
+_create_trashdir() {
+    local UN="$1";
+    if [ -z "$UN" ]; then
+        noarg '<$1: USERNAME>'; return 127;
+    fi
+
+    local DP=$( _trashdir "$UN" );
+    if [ -z "$DP" ]; then
+        return 127;
+    fi
+    if [ -d "$DP" ]; then
+        /bin/echo "$DP"; return 0;
+    fi
+
+    local PD=$( /usr/bin/dirname "$DP" );
+    local IS_PD_SCHG=$( show is-schg "$PD" );
+    if [ "$IS_PD_SCHG" -eq 1 ]; then
+        noschg "$PD";
+    fi
+
+    local RC=0;
+
+    warnmsg "Creating $(bright-white ${DP}).";
+    if ! ( /usr/bin/umask 077; \
+           /bin/mkdir "$DP"; \
+           /usr/sbin/chown "$UN" "$DP"; ) 2>>/dev/null; then
+        RC=127;
+        replace-previous-line;
+        errmsg "Creating $(bright-white ${DP}) failed.";
+    else
+        replace-previous-line;
+        passmsg "Created $(bright-white ${DP}).";
+    fi
+
+    # Make empty .trash directories system-immutable to avoid polluting it
+    # before we mount tmpfs to them. 
+    # 
+    if is-empty-directory "$DP"; then
+        schg "$DP";
+    fi
+
+    # Re-freeze the parent directory, if it was system-immutable.
+    #
+    if [ "$IS_PD_SCHG" -eq 1 ]; then
+        schg "$PD";
+    fi
+
+    return "$RC";
+}
+
+_mount_tmpfs() {
+    local DP="$1";
+    if [ -z "$DP" ]; then
+        noarg '<$1: DP>'; return 127;
+    fi
+    if [ ! -d "$DP" ]; then
+        notdir "$DP"; return 127;
+    fi
+    if is-mounted "$DP"; then
+        warnmsg "$(bright-white ${DP}) already appears to be mounted."; return 0;
+    fi
+    if ! is-empty-directory "$DP"; then
+        errmsg "$(bright-white ${DP}) should be vacant before mounting $(orange 'tmpfs') to it."; return 127;
+    fi
+
+    local UNAME=$( /usr/bin/basename $( /usr/bin/dirname "$DP" ));
+    local UID=$( /usr/bin/id -u "$UNAME" );
+    local SIZE=$( _size );  # required
+
+    warnmsg "Mounting $(orange 'tmpfs') to $(bright-white ${DP}).";
+    if ! /sbin/mount -t tmpfs -o rw,mode=0700,uid=${UID},size=${SIZE},noexec,nosuid tmpfs "$DP" 2>>/dev/null; then
+        replace-previous-line;
+        errmsg "Mounting $(orange 'tmpfs') to $(bright-white ${DP}) failed."; return 127;
+    else
+        replace-previous-line;
+        passmsg "Mounted $(orange 'tmpfs') to $(bright-white ${DP})."; return 0;
+    fi
+}
+
+_create_trashdirs() {
+    local RC=0;
+    local DP='';
+    local UN='';
+    local IFS=$'\n'; for UN in $( _users ); do
+        DP=$( _create_trashdir "$UN" || RC=127 );
+        if ! is-mounted "$DP"; then
+            _mount_tmpfs "$DP" || RC=127
+        fi
+    done
+    return "$RC";
+}
+
+_close_files() {
+    local PN='';
+    local PNS=$( /usr/bin/fstat | /usr/bin/grep -sE '/var/logs' | /usr/bin/awk '{ print $2 }' | /usr/bin/sort -diu );
+    local IFS=$'\n'; for PN in ${PNS}; do
+        case "$PN" in
+            pflog*) PN=pflogd;;
+        esac 
+        /usr/sbin/service "$PN" stop || ( /bin/pgrep "$PN" | /usr/bin/xargs /bin/kill )
+    done
+}
+
+_unmount_trashdirs() {
+    local RC=0;
+    local DP='';
+    local UN='';
+
+    local IFS=$'\n'; for UN in $( _users ); do
+        DP=$( _trashdir "$UN" );
+        if is-mounted "$DP"; then
+            unmount "$DP" || RC=127
+        fi
+    done
+
+    return "$RC";
+}
+
+_clear_trashdirs() {
+    local RC=0;
+    local UN='';
+    local IFS=$'\n'; for UN in $( _users ); do
+        trash-clear "$UN" || RC=127
+    done
+    return "$RC";
+}
+
+_stop() {
+    if _is_enabled; then
+        _close_files        || return 127
+        _clear_trashdirs    || return 127
+        _unmount_trashdirs  || return 127
+    fi
+}
+
+_start() {
+    if _is_enabled; then
+        _create_trashdirs   || return 127
+    fi
+}
+
+load_rc_config "$name";
+run_rc_command "$1";

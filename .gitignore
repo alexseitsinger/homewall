@@ -1,0 +1,13 @@
+.off
+images/
+mnt
+mnt/tmp
+mnt/var/tmp
+mnt/var/log
+mnt/var/logs
+mnt/var/run
+mnt/var/spool
+mnt/var/mail
+mnt/var/msgs
+mnt/dev
+mnt/mnt

@@ -1,0 +1,38 @@
+# Loopback Address
+::1/128
+
+# Unspecified Address
+::/128
+
+# IPv4-IPv6 Translation.
+64:ff9b::/96
+
+# IPv4-mapped Address
+::ffff:0:0/96
+
+# Discard-Only Address Block
+100::/64
+
+# IETF Protocol Assignments
+2001::/23
+
+# TEREDO
+2001::/32
+
+# Benchmarking
+2001:2::/48
+
+# Documentation
+2001:db8::/32
+
+# ORCHID
+2001:10::/28
+
+# 6to4
+2002::/16
+
+# Unique-Local
+fc00::/7
+
+# Link-Scoped Unicast
+fe80::/10

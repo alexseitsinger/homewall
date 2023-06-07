@@ -1,0 +1,905 @@
+#!/bin/sh -
+
+# PROVIDE: syslog_tunnel
+# REQUIRE: syslogd 
+
+builtin . /etc/rc.subr;
+builtin . /etc/shrc;
+
+name='syslog_tunnel';
+rcvar='syslog_tunnel_enable';
+desc='syslog + ssh';
+start_cmd='start';
+stop_cmd='stop';
+is_enabled_cmd='is_enabled';
+is_client_cmd='is_client';
+is_server_cmd='is_server';
+is_server_reachable_cmd='is_server_reachable';
+is_tunnel_open_cmd='is_tunnel_open';
+is_starting_when_reachable_cmd='is_starting_when_reachable';
+is_restarting_when_closed_cmd='is_restarting_when_closed';
+local_address_cmd='local_address';
+remote_address_cmd='remote_address';
+create_client_tun_cmd='create_client_tun';
+create_server_tun_cmd='create_server_tun';
+client_hostname_cmd='client_hostname';
+client_address_cmd='client_address';
+server_hostname_cmd='server_hostname';
+server_address_cmd='server_address';
+restart_syslogd_cmd='restart_syslogd';
+open_tunnel_cmd='open_tunnel';
+close_tunnel_cmd='close_tunnel';
+destroy_tuns_cmd='destroy_tuns';
+
+extra_commands='is_enabled';
+extra_commands="${extra_commands} is_client";
+extra_commands="${extra_commands} is_server";
+extra_commands="${extra_commands} is_server_reachable";
+extra_commands="${extra_commands} is_tunnel_open";
+extra_commands="${extra_commands} is_starting_when_reachable";
+extra_commands="${extra_commands} is_restarting_when_closed";
+extra_commands="${extra_commands} local_address";
+extra_commands="${extra_commands} remote_address";
+extra_commands="${extra_commands} create_client_tun";
+extra_commands="${extra_commands} create_server_tun";
+extra_commands="${extra_commands} client_hostname";
+extra_commands="${extra_commands} client_address";
+extra_commands="${extra_commands} server_hostname";
+extra_commands="${extra_commands} server_address";
+extra_commands="${extra_commands} restart_syslogd";
+extra_commands="${extra_commands} open_tunnel";
+extra_commands="${extra_commands} close_tunnel";
+extra_commands="${extra_commands} destroy_tuns";
+
+assert_rcvar() {
+    local NAME="$1";
+    if [ -z "$NAME" ]; then
+        noarg '<$1: NAME>'; return 127;
+    fi
+
+    local VALUE='';
+    eval VALUE="\$${NAME}";
+
+    case "$NAME" in
+        syslog_tunnel_user)
+            return 0;
+        ;;
+        syslog_tunnel_identity)
+            return 0;
+        ;;
+        syslog_tunnel_server)
+            local HN=$( /bin/echo "$VALUE" | /usr/bin/cut -d' ' -f1 );
+            local IP=$( /bin/echo "$VALUE" | /usr/bin/cut -d' ' -f2 );
+            if is-ipv4-address "$IP"; then
+                return 0;
+            fi
+            errmsg "$(orange 'syslog_tunnel_server')=\"<FQHN> <IPV4>\"";
+        ;;
+        syslog_tunnel_client)
+            # Skip checking this if we're running on the server.
+            if [ -n "$syslog_tunnel_client" ] && \
+               [ -n "$syslog_tunnel_server" ] && \
+               [ "$syslog_tunnel_client" == "$syslog_tunnel_server" ]; then
+                return 0;
+            fi
+            if [ -z "$syslog_tunnel_client" ] && \
+               [ -n "$syslog_tunnel_server" ] && \
+               [ -n "$syslog_tunnel_clients" ]; then
+                return 0;
+            fi
+
+            local HN=$( /bin/echo "$VALUE" | /usr/bin/cut -d' ' -f1 );
+            local IP=$( /bin/echo "$VALUE" | /usr/bin/cut -d' ' -f2 );
+            if is-ipv4-address "$IP"; then
+                return 0;
+            fi
+            errmsg "$(orange 'syslog_tunnel_client')=\"<FQHN> <IPV4>\""; 
+            return 1;
+        ;;
+        syslog_tunnel_subnet)
+            if is-ipv4-cidr-notation "$VALUE"; then
+                return 0;
+            fi
+            errmsg "$(orange 'syslog_tunnel_subnet')=\"<CIDR>\"";
+            return 1;
+        ;;
+        syslog_tunnel_reachable_timeout)
+            if is-number "$VALUE"; then
+                return 0;
+            fi
+            errmsg "$(orange 'syslog_tunnel_reachable_timeout')=\"<NUMBER>\""; 
+            return 1;
+        ;;
+        syslog_tunnel_reachable_retries)
+            if is-number "$VALUE"; then
+                return 0;
+            fi
+            errmsg "$(orange 'syslog_tunnel_reachable_retries')=\"<NUMBER>\"";
+            return 1;
+        ;;
+        syslog_tunnel_port)
+            if is-number "$VALUE"; then
+                return 0;
+            fi
+            errmsg "$(orange 'syslog_tunnel_port')=\"<NUMBER>\"";
+            return 1;
+        ;;
+        syslog_tunnel_clients)
+            # space-seperated list of machine names.
+            # e.g. "edge core services"
+            #
+            return 0;
+        ;;
+        syslog_tunnel_client_*)
+            # space-sperated declarations:
+            # e.g. "edge.home.lan 10.0.0.0/30"
+            #
+            local HN=$( /bin/echo "$VALUE" | /usr/bin/cut -d' ' -f1 );
+            local SN=$( /bin/echo "$VALUE" | /usr/bin/cut -d' ' -f2 );
+            if is-ipv4-cidr-notation "$SN"; then
+                return 0;
+            fi
+            not-ipv4-cidr-notation "$NAME"; return 1;
+        ;;
+    esac
+    
+    #if [ -z "$VALUE" ]; then
+    #    errmsg "$(orange ${NAME}) is unset in $(bright-white '/etc/rc.conf(.local)')"; return 127;
+    #fi
+}
+
+assert_rcvars() {
+    local RC=0;
+    local NAME='';
+    local NAMES="$@";
+    local IFS=' '; for NAME in ${NAMES}; do
+        assert_rcvar "$NAME" || RC=1
+    done
+    return "$RC";
+}
+
+is_enabled() {
+    case "${syslog_tunnel_enable:-NO}" in
+        [Yy][Ee][Ss]) return 0;;
+        *) return 1;;
+    esac
+}
+
+is_server() {
+    local ADDR=$( server_address );
+    if [ -z "$ADDR" ]; then
+        errmsg "Retrieving the server address failed."; return 127;
+    fi
+    local NAME=$( find-nic "$ADDR" 2>>/dev/null );
+    if [ -n "$NAME" ]; then
+        return 0;
+    fi
+    return 1;
+}
+
+is_client() {
+    local ADDR=$( client_address );
+    local NAME=$( find-nic "$ADDR" 2>>/dev/null );
+    if [ -n "$NAME" ]; then
+        return 0;
+    fi
+    return 1;
+}
+
+is_server_reachable() {
+    local ADDR=$( server_address );
+    is-route "$ADDR";
+}
+
+is_client_reachable() {
+    local ADDR=$( client_address );
+    is-route "$ADDR";
+}
+
+is_tunnel_open() {
+    if is_server; then
+        errmsg "cannot determine if tunnel open from server."; return 127;
+    fi
+  
+    # e.g. 0:1 
+    local ARG=$( /bin/pgrep ssh  | \
+                 /usr/bin/xargs /bin/ps -ww -o args | \
+                 /usr/bin/grep -sF $( client_address ) | \
+                 /usr/bin/grep -svF 'grep' | \
+                 /usr/bin/grep -soE '\-w ([[:digit:]]+\:[[:digit:]]+)' | \
+                 /usr/bin/sed 's/^\-w //' );
+
+    if [ -n "$ARG" ]; then
+        return 0;
+    fi
+    return 1;
+}
+
+is_syslogd_enabled() {
+    eval local VALUE="\$${syslogd_enable}";
+    case "$VALUE" in
+        [Yy][Ee][Ss]) return 0;;
+        *) return 1;;
+    esac
+}
+
+is_dying_jail() {
+    local IS_DYING=$( /sbin/sysctl -qien security.jail.param.dying );
+    if [ "$IS_DYING" -eq 1 ]; then
+        return 0;
+    fi
+    return 1; 
+}
+
+when_server_reachable() {
+    assert_rcvars syslog_tunnel_reachable_timeout syslog_tunnel_reachable_retries || return 127
+
+    local RETRIES="$syslog_tunnel_reachable_retries";
+    local TIMEOUT="$syslog_tunnel_reachable_timeout";
+    while [ "$RETRIES" -gt 0 ]; do
+        if is_dying_jail; then
+            return 1;
+        fi
+        if is_server_reachable; then
+            return 0;
+        fi 
+        RETRIES=$(( "$RETRIES" - 1 ));
+        /bin/sleep ${TIMEOUT};
+    done
+
+    return 1;
+}
+
+when_tunnel_closed() {
+    local RETRIES="$syslog_tunnel_closed_retries";
+    local TIMEOUT="$syslog_tunnel_closed_timeout";
+    while [ "$RETRIES" -gt 0 ]; do
+        if is_dying_jail; then
+            return 1;
+        fi
+        if ! is_tunnel_open; then
+            return 0;
+        fi
+        RETRIES=$(( "$RETRIES" - 1 ));
+        /bin/sleep "$TIMEOUT";
+    done
+
+    return 1;
+}
+
+create_syslogd_conf() {
+    assert_rcvars syslog_tunnel_subnet;
+
+    if ! is_client; then
+        errmsg "cannot create syslogd conf from the server."; return 127;
+    fi
+
+    local FP_IN=$( /usr/bin/umask 077; /usr/bin/mktemp );
+    if [ ! -f "$FP_IN" ]; then
+        return 127;
+    fi
+    local DP=$( /usr/bin/dirname "$FP_IN" );
+    local FP_OUT="${DP}/syslog.tunnel.conf";
+    if [ -f "$FP_OUT" ]; then
+        /bin/rm -f "$FP_OUT" 2>>/dev/null;
+    fi
+    if [ -f "$FP_OUT" ]; then
+        should-not-exist "$FP_OUT"; return 127;
+    fi
+    
+    /bin/mv "$FP_IN" "$FP_OUT" 2>>/dev/null || return 127 
+    if [ ! -f "$FP_OUT" ]; then
+        errmsg "Moving $(bright-white ${FP_IN}) to $(bright-white ${FP_OUT}) failed."; return 127;
+    fi
+
+    local A1=$( address_one "$syslog_tunnel_subnet" );
+    local A2=$( address_two "$syslog_tunnel_subnet" );
+
+    /bin/echo "*.debug; @${A2}" >> "$FP_OUT";
+    if is-empty-file "$FP_OUT"; then
+        errmsg "Creating $(bright-white ${FP_OUT}) failed."; return 127;
+    fi
+
+    /bin/echo "$FP_OUT";
+}
+
+restart_syslogd() {
+    if is_server; then
+        errmsg 'cannot restart syslogd on the server'; return 127;
+    fi
+    if is_dying_jail; then
+        return 1;
+    fi
+    if ! is_syslogd_enabled; then
+        return 1;
+    fi
+        
+    /usr/sbin/service syslogd stop;
+
+    if is_tunnel_open; then
+        eval local VALUE="\$${syslogd_flags}";
+        VALUE=$( /bin/echo "$VALUE" | /usr/bin/sed -E 's| ?\-f .+ ?||g' );
+        local CONF=$( create_syslogd_conf );
+        if [ ! -f "$CONF" ]; then
+            return 127;
+        fi
+
+        /usr/sbin/syslogd ${FLAGS} -f ${CONF} &
+    else
+        /usr/sbin/service syslogd start;
+    fi
+}
+
+network_octet() {
+    #assert_rcvar syslog_tunnel_subnet || return 127
+
+    local SN="${1:-${syslog_tunnel_subnet}}";
+    if [ -z "$SN" ]; then
+        noarg '<$1: SYSLOG_TUNNEL_SUBNET>'; return 127;
+    fi
+    if ! is-ipv4-cidr-notation "$SN"; then
+        not-ipv4-cidr-notation "$SN"; return 127;
+    fi
+ 
+    local LO=$( /bin/echo "$SN" | /usr/bin/xargs | /usr/bin/cut -d'/' -f1 |  /usr/bin/cut -d'.' -f4 );
+    local REM=$(( "$LO" % 4 ));
+    if [ "$REM" -ne 0 ]; then
+        not-ipv4-cidr-notation "$SN"; return 127;
+    fi
+
+    /bin/echo "$LO";
+}
+
+address_one() {
+    #assert_rcvar syslog_tunnel_subnet || return 127
+
+    local SN="${1:-${syslog_tunnel_subnet}}";
+    if [ -z "$SN" ]; then
+        noarg '<$1: SYSLOG_TUNNEL_SUBNET>'; return 127;
+    fi
+    if ! is-ipv4-cidr-notation "$SN"; then
+        not-ipv4-cidr-notation "$SN"; return 127;
+    fi
+    
+    local TRE=$( /bin/echo "$SN" | /usr/bin/xargs | /usr/bin/cut -d'/' -f1 | /usr/bin/cut -d'.' -f1-3 );
+    local NO=$( network_octet $SN );
+    local CO=$( expr $NO + 1 );
+    local CA="${TRE}.${CO}";
+
+    /bin/echo "$CA";
+}
+
+address_two() {
+    #assert_rcvar syslog_tunnel_subnet || return 127
+
+    local SN="${1:-${syslog_tunnel_subnet}}";
+    if [ -z "$SN" ]; then
+        noarg '<$1: SYSLOG_TUNNEL_SUBNET>'; return 127;
+    fi
+    if ! is-ipv4-cidr-notation "$SN"; then
+        not-ipv4-cidr-notation "$SN"; return 127;
+    fi
+
+    local TRE=$( /bin/echo "$SN" | /usr/bin/cut -d'/' -f1 | /usr/bin/cut -d'.' -f1-3 );
+    local NO=$( network_octet $SN );
+    local SO=$( expr $NO + 2 );
+    local SA="${TRE}.${SO}";
+
+    /bin/echo "$SA";
+}
+
+remote_address() {
+    if is_client; then
+        address_two "$syslog_tunnel_subnet";
+    else
+        address_one "$syslog_tunnel_subnet";
+    fi
+}
+
+local_address() {
+    if is_client; then
+        address_one "$syslog_tunnel_subnet";
+    else
+        address_two "$syslog_tunnel_subnet";
+    fi
+}
+
+server_hostname() {
+    assert_rcvars syslog_tunnel_server || return 127
+
+    local HN=$( /bin/echo "$syslog_tunnel_server" | /usr/bin/xargs | /usr/bin/cut -d' ' -f1 );
+    if [ -z "$HN" ]; then
+        errmsg "Retrieving the server hostname failed."; return 127;
+    fi
+    if is-ipv4-address "$HN"; then
+        errmsg "syslog_tunnel_server=\"$(orange '<FQHN> <IPV4-CIDR>')\""; return 127;
+    fi
+
+    /bin/echo "$HN";
+}
+
+server_address() {
+    assert_rcvars syslog_tunnel_server || return 127
+
+    local ADDR=$( /bin/echo "$syslog_tunnel_server" | /usr/bin/xargs | /usr/bin/cut -d' ' -f2 );
+    if [ -z "$ADDR" ]; then
+        errmsg "Retrieving the tunnel server address failed."; return 127;
+    fi
+    if ! is-ipv4-address "$ADDR"; then
+        errmsg "syslog_tunnel_server=\"$(orange '<FQHN> <IPV4-CIDR>')\""; return 127;
+    fi
+    
+    /bin/echo "$ADDR";
+}
+
+client_hostname() {
+    assert_rcvars syslog_tunnel_client || return 127
+
+    local HN=$( /bin/echo "$syslog_tunnel_client" | /usr/bin/xargs | /usr/bin/cut -d' ' -f1 );
+    if [ -z "$HN" ]; then
+        errmsg "Retrieving the client hostname failed."; return 127;
+    fi
+    if is-ipv4-address "$HN"; then
+        errmsg "syslog_tunnel_client=\"$(orange '<FQHN> <IPV4-CIDR>')\""; return 127;
+    fi
+
+    /bin/echo "$HN";
+}
+
+client_address() {
+    assert_rcvars syslog_tunnel_client || return 127
+
+    local ADDR=$( /bin/echo "$syslog_tunnel_client" | /usr/bin/xargs | /usr/bin/cut -d' ' -f2 );
+    if [ -z "$ADDR" ]; then
+        errmsg "Retrieving the tunnel client address failed."; return 127;
+    fi
+    if ! is-ipv4-address "$ADDR"; then
+        errmsg "syslog_tunnel_client=\"$(orange '<FQHN> <IPV4-CIDR>')\""; return 127;
+    fi
+
+    /bin/echo "$ADDR";
+}
+
+remote_command() {
+    assert_rcvars syslog_tunnel_client syslog_tunnel_server syslog_tunnel_port syslog_tunnel_user syslog_tunnel_identity || return 127
+
+    if is_server; then
+        errmsg "Cannot execute remote command from the server."; return 127;
+    fi
+
+    local FLAGS="$1";
+    if [ "$FLAGS" == '-' ]; then
+        FLAGS='';
+    fi
+    local CMD="$2";
+    if [ -z "$CMD" ]; then
+        noarg '<$2: CMD>'; return 127;
+    fi
+
+    local CLIENT_ADDRESS=$( client_address );
+    if ! is-ipv4-address "$CLIENT_ADDRESS"; then
+        not-ipv4-address "$CLIENT_ADDRESS"; return 127;
+    fi
+    local SERVER_ADDRESS=$( server_address );
+    if ! is-ipv4-address "$SERVER_ADDRESS"; then
+        not-ipv4-address "$SERVER_ADDRESS"; return 127;
+    fi
+    
+    local TUNNEL_USER="${syslog_tunnel_user:-root}";
+    local TUNNEL_IDENTITY="${syslog_tunnel_identity:-/root/.ssh/identities/logs0/id_rsa}";
+    local TUNNEL_PORT="${syslog_tunnel_port:-22}";
+
+    /usr/bin/ssh -b ${CLIENT_ADDRESS} \
+                 -l ${TUNNEL_USER} \
+                 -i ${TUNNEL_IDENTITY} \
+                 -p ${TUNNEL_PORT} \
+                 -o StrictHostKeyChecking=no \
+                 -o UserKnownHostsFile=/dev/null \
+                 ${FLAGS} \
+                 ${SERVER_ADDRESS} \
+                 ${CMD} 
+}
+
+create_client_tun() {
+    assert_rcvars syslog_tunnel_subnet syslog_tunnel_server || return 127
+
+    if is_server; then
+        errmsg "Cannot retreive client tun name from server."; return 127;
+    fi
+    if is_tunnel_open; then
+        warnmsg "the client tun interface already exists and in use."; return 127;
+    fi
+
+    local A1=$( address_one "$syslog_tunnel_subnet" );
+    if ! is-ipv4-address "$A1"; then
+        not-ipv4-address "$A1"; return 127;
+    fi
+
+    local A2=$( address_two "$syslog_tunnel_subnet" );
+    if ! is-ipv4-address "$A2"; then
+        not-ipv4-address "$A2"; return 127;
+    fi
+   
+    local HN=$( server_hostname );
+    local HN_CLIENT=$( client_hostname );
+    if [ -z "$HN" ] || [ "$HN" == 'localhost' ] || [ "$HN" == "$HN_CLIENT" ]; then
+        errmsg "Retrieving the server hostname for the client tun failed."; return 127;
+    fi
+
+    local NAME=$( find-nic "$A1" 2>>/dev/null );
+    if [ -z "$NAME" ]; then
+        NAME=$( /sbin/ifconfig tun create 2>>/dev/null );
+    fi
+    if [ -z "$NAME" ]; then
+        errmsg "Creating client tun failed."; return 127;
+    fi
+
+    /sbin/ifconfig ${NAME} ${A1}/30 ${A2};
+    /sbin/ifconfig ${NAME} description "tunnel to ${HN}"; 
+ 
+    /bin/echo "$NAME";
+}
+
+create_server_tun() {
+    assert_rcvars syslog_tunnel_subnet || return 127
+
+    if is_server; then
+        errmsg "Cannot create server tun from the server."; return 127;
+    fi
+    if is_tunnel_open; then
+        errmsg "cannot create server tun with the tunnel already open."; return 127;
+    fi
+
+    local A1=$( address_one "$syslog_tunnel_subnet" );
+    if ! is-ipv4-address "$A1"; then
+        not-ipv4-address "$A1"; return 127;
+    fi
+
+    local A2=$( address_two "$syslog_tunnel_subnet" );
+    if ! is-ipv4-address "$A2"; then
+        not-ipv4-address "$A2"; return 127;
+    fi
+
+    local HN=$( client_hostname );
+    local HN_SERVER=$( server_hostname );
+    if [ -z "$HN" ] || [ "$HN" == 'localhost' ] || [ "$HN" == "$HN_SERVER" ]; then
+        errmsg "Retreiving the client hostname for the server tun failed."; return 127;
+    fi
+
+    local NAME=$( remote_command -q ". /etc/shrc; find-nic ${A2} 2>>/dev/null" );
+    if [ -z "$NAME" ]; then
+        NAME=$( remote_command -q "/sbin/ifconfig tun create 2>>/dev/null" );
+    fi
+    if [ -z "$NAME" ]; then
+        errmsg "Creating server tun failed."; return 127;
+    fi
+
+    remote_command -q "( /sbin/ifconfig ${NAME} inet ${A2}/30 ${A1} && \
+                         /sbin/ifconfig ${NAME} description 'tunnel to ${HN}' ) >>/dev/null 2>&1" &
+
+    /bin/echo "$NAME";
+}
+
+open_tunnel() { 
+    /bin/echo "open tunnel" >>/dev/stderr;
+
+    assert_rcvars syslog_tunnel_client syslog_tunnel_server syslog_tunnel_port syslog_tunnel_user syslog_tunnel_identity || return 127
+
+    if is_server; then
+        errmsg "Cannot open tunnel from the ssh server"; return 127;
+    fi
+    if is_tunnel_open; then
+        warnmsg "tunnel is already open, idiot."; return 0;
+    fi
+
+    local CLIENT_ADDRESS=$( client_address );
+    if ! is-ipv4-address "$CLIENT_ADDRESS"; then
+        not-ipv4-address "$CLIENT_ADDRESS"; return 127;
+    fi
+    local CLIENT_TUN=$( create_client_tun );
+    if [ -z "$CLIENT_TUN" ]; then
+        errmsg "Creating client tun failed."; return 127;
+    fi
+    local CLIENT_TUN_NUMBER=$( /bin/echo "$CLIENT_TUN" | /usr/bin/sed -E 's|^tun||' );
+    if ! is-number "$CLIENT_TUN_NUMBER"; then
+        errmsg "$(orange ${CLIENT_TUN}) should end in a positive integer."; return 127;
+    fi
+    /bin/echo "CLIENT_ADDRESS: ${CLIENT_ADDRESS}" >>/dev/stderr;
+    /bin/echo "CLIENT_TUN: ${CLIENT_TUN}" >>/dev/stderr;
+    /bin/echo "CLIENT_TUN_NUMBER: ${CLIENT_TUN_NUMBER}" >>/dev/stderr;
+
+    local SERVER_ADDRESS=$( server_address );
+    if ! is-ipv4-address "$SERVER_ADDRESS"; then
+        not-ipv4-address "$SERVER_ADDRESS"; return 127;
+    fi
+    local SERVER_TUN=$( create_server_tun );
+    if [ -z "$SERVER_TUN" ]; then
+        errmsg "Creating server tun failed."; return 127;
+    fi
+    local SERVER_TUN_NUMBER=$( /bin/echo "$SERVER_TUN" | /usr/bin/sed -E 's|^tun||' );
+    if ! is-number "$SERVER_TUN_NUMBER"; then
+        errmsg "$(orange ${SERVER_TUN}) should end in a positive integer."; return 127;
+    fi
+    /bin/echo "SERVER_ADDRESS: ${SERVER_ADDRESS}" >>/dev/stderr;
+    /bin/echo "SERVER_TUN: ${SERVER_TUN}" >>/dev/stderr;
+    /bin/echo "SERVER_TUN_NUMBER: ${SERVER_TUN_NUMBER}" >>/dev/stderr;
+
+    local TUNNEL_PORT="${syslog_tunnel_port:-22}";
+    local TUNNEL_USER="${syslog_tunnel_user:-root}";
+    local TUNNEL_IDENTITY="${syslog_tunnel_identity:-/root/.ssh/identities/logs0/id_rsa}";
+
+    /bin/echo "TUNNEL_PORT: ${TUNNEL_PORT}";
+    /bin/echo "TUNNEL_USER: ${TUNNEL_USER}";
+    /bin/echo "TUNNEL_IDENTITY: ${TUNNEL_IDENTITY}";
+
+    local RC=0;
+
+    /bin/echo "Opening tunnel" >>/dev/stderr;
+
+    ( /usr/bin/ssh -b ${CLIENT_ADDRESS} \
+                   -p ${TUNNEL_PORT} \
+                   -l ${TUNNEL_USER} \
+                   -i ${TUNNEL_IDENTITY} \
+                   -w ${CLIENT_TUN_NUMBER}:${SERVER_TUN_NUMBER} \
+                   -o StrictHostKeyChecking=no \
+                   -o UserKnownHostsFile=/dev/null \
+                   -q \
+                   -fNT \
+                   ${SERVER_ADDRESS} || RC=1 ) &
+
+    local PID=$!;
+    
+    if [ "$RC" -eq 1 ]; then
+        errmsg "Opening tunnel failed."; return 127;
+    fi
+
+    if [ -z "$PID" ]; then  
+        PID=$( /bin/pgrep ssh );
+    fi 
+    if is-number "$PID"; then
+        save_pidfile "$PID" "$CLIENT_TUN" "$SERVER_TUN";
+    fi
+}
+
+save_pidfile() {
+    local PID="$1";
+    if [ -z "$PID" ]; then
+        noarg '<$1: PID>'; return 127;
+    fi
+    if ! is-number "$PID"; then
+        errmsg "$(orange '$1') should be a positive integer."; return 127;
+    fi
+
+    local CLIENT_TUN="$2";
+    if [ -z "$CLIENT_TUN" ]; then
+        noarg '<$2: CLIENT_TUN>'; return 127;
+    fi
+    if ! is-nic "$CLIENT_TUN"; then
+        not-nic "$CLIENT_TUN"; return 127;
+    fi
+    case "$CLIENT_TUN" in
+        tun*) ;;
+        *) errmsg "Expected $(orange '$2') to start with $(orange 'tun')."; return 127;;
+    esac
+
+    local SERVER_TUN="$3";
+    if [ -z "$SERVER_TUN" ]; then
+        noarg '<$3: SERVER_TUN>'; return 127;
+    fi
+    case "$SERVER_TUN" in
+        tun*) ;;
+        *) errmsg "Expected $(orange '$3') to start with $(orange 'tun')."; return 127;;
+    esac
+
+    # pgrep to grab ssh pid since $? wont even work ok i know
+    local PIDFILE='/var/run/syslog-tunnel.pid';
+    if [ -f "$PIDFILE" ]; then
+        /bin/rm "$PIDFILE" || return 127 
+    fi
+    ( /usr/bin/umask 077; /usr/bin/touch "$PIDFILE" ) 2>>/dev/null;  
+    if [ ! -f "$PIDFILE" ]; then
+        notfile "$PIDFILE"; return 127;
+    fi
+    if ! is-empty-file "$PIDFILE"; then
+        errmsg "$(bright-white ${PIDFILE}) should be an empty file."; return 127;
+    fi
+
+    /bin/cat <<- __EOF__ >> "$PIDFILE"
+${PID}
+${CLIENT_TUN}
+${SERVER_TUN}
+__EOF__
+
+    if is-empty-file "$PIDFILE"; then
+        rmfile "$PIDFILE";
+        errmsg "Saving $(bright-white ${PIDFILE}) failed."; return 127;
+    fi
+
+    /bin/echo "$PIDFILE";
+}
+
+destroy_tuns() {
+    local PEER='';
+    local M='';
+    local IFS=$'\n'; for IFN in $( /sbin/ifconfig -g tun ); do
+        M=$( /sbin/ifconfig "$IFN" | /usr/bin/grep -sF 'inet ' | /usr/bin/xargs );
+        if [ -z "$M" ]; then
+            /sbin/ifconfig "$IFN" destroy; continue;
+        fi
+
+        PEER=$( /bin/echo "$M" | /usr/bin/cut -d' '  -f4 | /usr/bin/sed -E 's|\/30$||' );
+        if ! /sbin/ping -c1 -W1 -t3 "$PEER" >>/dev/null 2>&1; then
+            /sbin/ifconfig "$IFN" destroy;
+        fi
+    done
+}
+
+close_tunnel() {
+    assert_rcvars syslog_tunnel_reachable_timeout || return 127
+
+    if is_server; then
+        errmsg "cannot close tunnel from server."; return 127;
+    fi
+    if ! is_tunnel_open; then
+        return 0;
+    fi
+
+    local PIDFILE='/var/run/syslog-tunnel.pid';
+    if [ ! -f "$PIDFILE" ]; then
+        notfile "$PIDFILE"; return 127;
+    fi
+
+    local PID=$( /usr/bin/head -n1 "$PIDFILE" );
+    local NAME=$( /usr/bin/head -n2 "$PIDFILE" | /usr/bin/tail -n1 );
+    local NAME_REMOTE=$( /usr/bin/tail -n1 "$PIDFILE" );
+
+    if /bin/ps "$PID" >>/dev/null 2>&1; then
+        /bin/kill "$PID";
+    fi
+    
+    if is-nic "$NAME"; then
+        /sbin/ifconfig "$NAME" destroy;
+    fi
+
+    if [ -n "$NAME_REMOTE" ]; then
+        #remote_command -q "service syslog_tunnel destroy_tuns" >>/dev/null 2>&1;
+        remote_command -q "/sbin/ifconfig ${NAME_REMOTE} destroy"; 
+    fi
+
+    /bin/rm -f "$PIDFILE"; 
+}
+
+restart_services() {
+    restart_syslogd;
+}
+
+stop_restarting_when_closed() {
+    if ! is_client; then
+        errmsg "syslog tunnel only restarts from the client."; return 127;
+    fi
+    if ! is_restarting_when_closed; then
+        return 0;
+    fi
+
+    local PIDFILE='/var/run/syslog-tunnel.restart.pid';
+    local PID=$( /bin/cat "$PIDFILE" 2>>/dev/null );
+    if /bin/ps "$PID" >>/dev/null 2>&1; then
+        /bin/kill "$PID";
+    fi
+    if [ -f "$PIDFILE" ]; then
+        /bin/rm -f "$PIDFILE";
+    fi
+}
+
+is_restarting_when_closed() {
+    local PIDFILE='/var/run/syslog-tunnel.restart.pid';
+    if [ ! -f "$PIDFILE" ]; then
+        return 1;   
+    fi
+    
+    local PID=$( /bin/cat "$PIDFILE" 2>>/dev/null );
+    local IS_RUNNING=$( show /bin/ps "$PID" );
+    if [ "$IS_RUNNING" -eq 1 ]; then
+        return 0;
+    fi
+
+    return 1;
+}
+
+restart_when_closed() {
+    if ! is_client; then
+        errmsg "the syslog tunnel must be restarted from the client."; return 127;
+    fi
+    if is_restarting_when_closed; then
+        return 0;
+    fi
+
+    local PIDFILE='/var/run/syslog-tunnel.restart.pid';
+    /bin/rm -f "$PIDFILE" 2>>/dev/null;
+    ( /usr/bin/umask 027; /usr/bin/touch "$PIDFILE" ) 2>>/dev/null
+    if [ ! -f "$PIDFILE" ]; then
+        notfile "$PIDFILE"; return 127;
+    fi
+
+    ( when_tunnel_closed && /bin/rm -f "$PIDFILE"; start ) &
+    /bin/echo $! >> "$PIDFILE";
+}
+
+is_starting_when_reachable() {
+    local PIDFILE='/var/run/syslog-tunnel.reachable.pid';
+    if [ ! -f "$PIDFILE" ]; then
+        return 1;
+    fi
+
+    local PID=$( /bin/cat "$PIDFILE" 2>>/dev/null );
+    local IS_RUNNING=$( show /bin/ps "$PID" );
+    if [ "$IS_RUNNING" -eq 1 ]; then
+        return 0;
+    fi
+    return 1;
+}
+
+stop_starting_when_reachable() {
+    if ! is_client; then
+        errmsg "The syslog tunnel is not started later from the server."; return 127;
+    fi
+    if ! is_starting_when_reachable; then
+        return 0;
+    fi
+
+    local PIDFILE='/var/run/syslog-tunnel.reachable.pid';
+    local PID=$( /bin/cat "$PIDFILE" 2>>/dev/null );
+    if /bin/ps "$PID" >>/dev/null 2>&1; then
+        /bin/kill "$PID";
+    fi
+    if [ -f "$PIDFILE" ]; then
+        /bin/rm -f "$PIDFILE";
+    fi
+}
+
+start_when_reachable() {
+    if ! is_client; then
+        errmsg "Cannot start syslog tunnel client from the server."; return 127;
+    fi
+    if is_starting_when_reachable; then
+        return 0;
+    fi
+
+    local PIDFILE='/var/run/syslog-tunnel.reachable.pid';
+    /bin/rm -f "$PIDFILE" 2>>/dev/null;
+    ( /usr/bin/umask 027; /usr/bin/touch "$PIDFILE" 2>>/dev/null );
+    if [ ! -f "$PIDFILE" ]; then
+        notfile "$PIDFILE"; return 127;
+    fi
+ 
+    ( when_server_reachable && /bin/rm -f "$PIDFILE"; start ) &
+    /bin/echo $! >> "$PIDFILE";
+}
+
+start() {
+    if ! is_syslogd_enabled; then
+        return 0;
+    fi
+    
+    if is_client; then
+        if is_server_reachable; then
+            open_tunnel || return 127
+            restart_syslogd; 
+            #restart_when_closed || return 127
+        else
+            start_when_reachable || return 127
+        fi
+    fi
+}
+
+stop() {
+    if is_client; then
+        stop_starting_when_reachable;
+        stop_restarting_when_closed; 
+        close_tunnel;
+    fi
+}
+
+ 
+load_rc_config "$name";
+run_rc_command "$1";

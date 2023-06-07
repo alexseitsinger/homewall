@@ -1,0 +1,4 @@
+#
+# /etc/pf.d/tables/BLOCKED.OUT
+# This list may be accompanied by additions that are added from the command line or another script.
+#

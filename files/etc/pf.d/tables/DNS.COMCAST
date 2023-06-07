@@ -1,0 +1,7 @@
+#
+# /etc/pf.d/tables/DNS.COMCAST
+#
+
+# Comcast/XFinity DNS
+75.75.75.75
+75.75.76.76

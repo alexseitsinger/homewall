@@ -1,0 +1,76 @@
+#!/bin/sh -
+
+builtin . /etc/shrc
+
+_dd() {
+  /bin/dd if=${1} of=${2} bs=1m conv=noerror,sync status=progress || return 1
+}
+
+_cphier() {
+  local SYSTEM_DIR="$1";
+  if [ -z "$SYSTEM_DIR" ]; then
+    noarg '<$1: SYSTEM_DIR>'; return 1;
+  fi
+  if [ ! -d "$SYSTEM_DIR" ]; then
+    notdir "$SYSTEM_DIR"; return 1;
+  fi
+
+  local FILES_DIR="${SYSTEM_DIR}/files";
+  if [ ! -d "$FILES_DIR" ]; then
+    notdir "$FILES_DIR"; return 1;
+  fi
+
+  local SYSTEM_NAME=$( /usr/bin/basename "$SYSTEM_DIR" );
+
+  local TOP="/dev/gpt/${SYSTEM_NAME}-top";
+  if [ ! -c "$TOP" ]; then
+    errmsg "Not found: ${TOP}"; return 1;
+  fi
+
+  unmount-all /mnt || return 1
+  /sbin/mount ${TOP} /mnt || return 1
+  noschg -R /mnt/files || return 1
+  cphier ${FILES_DIR} /mnt/files || return 1
+  schg -R /mnt/files || return 1
+  /sbin/umount /mnt || return 1
+}
+
+_main() {
+  local SYSTEM_NAME=$( sysname );
+  local SYSTEM_DIR=$( sysdir "$SYSTEM_NAME" );
+  local IMAGES_DIR="${SYSTEM_DIR}/images";
+
+  local TOP_IMG="${IMAGES_DIR}/top"
+  if [ ! -f "$TOP_IMG" ]; then
+    notfile "$TOP_IMG"; return 1;
+  fi
+  _dd "$TOP_IMG" "/dev/gpt/${SYSTEM_NAME}-top" || return 1
+  _dd "$TOP_IMG" "/dev/gpt/${SYSTEM_NAME}-jails_base" || return 1
+
+  local JAILS_THIN_IMG="${IMAGES_DIR}/jails_thin";
+  if [ ! -f "$JAILS_THIN_IMG" ]; then
+    notfile "$JAILS_THIN_IMG"; return 1;
+  fi
+  _dd "$JAILS_THIN_IMG" "/dev/gpt/${SYSTEM_NAME}-jails_thin" || return 1
+
+  local USR_LOCAL_IMG="${IMAGES_DIR}/usr_local"
+  if [ ! -f "$USR_LOCAL_IMG" ]; then
+    notfile "$USR_LOCAL_IMG"; return 1;
+  fi
+  _dd "$USR_LOCAL_IMG" "/dev/gpt/${SYSTEM_NAME}-usr_local" || return 1
+
+  local VAR_IMG="${IMAGES_DIR}/var";
+  if [ ! -f "$VAR_IMG" ]; then
+    notfile "$VAR_IMG"; return 1;
+  fi
+  _dd "$VAR_IMG" "/dev/gpt/${SYSTEM_NAME}-var" || return 1
+
+  local HOME_IMG="${IMAGES_DIR}/home"
+  if [ ! -f "$HOME_IMG" ]; then
+    notfile "$HOME_IMG"; return 1;
+  fi
+  _dd "$HOME_IMG" "/dev/gpt/${SYSTEM_NAME}-home" || return 1
+
+  _cphier "$SYSTEM_DIR" || return 1
+}
+_main;

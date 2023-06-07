@@ -1,0 +1,29 @@
+#!/bin/sh -
+#
+# Confirm that periodic has been commented out in /etc/crontab.
+#
+
+builtin . /etc/shrc;
+
+_main() {
+  local SYSTEM_DIR=$( sysdir );
+
+  local MNT_DIR="${SYSTEM_DIR}/mnt";
+  if ! is-mounted "$MNT_DIR"; then
+    errmsg "$(bright-white ${MNT_DIR}) must be mounted before testing any filesystem(s)."; return 1;
+  fi
+
+  local RC=0;
+  local CRONTAB="${MNT_DIR}/etc/crontab";
+  local L1='1 3 * * * root periodic daily';
+  local L2='15 4 * * 6 root periodic weekly';
+  local L3='30 5 1 * * root periodic monthly';
+  
+  assert "${CRONTAB} is a file" test -f "$CRONTAB" || RC=1
+  assert "'${L1}' is commented out." is-line-included "$CRONTAB" '#1 3 \* \* \* root periodic daily' || RC=1
+  assert "'${L2}' is commented out." is-line-included "$CRONTAB" '#15 4 \* \* 6 root periodic weekly' || RC=1
+  assert "'${L3}' is commented out." is-line-included "$CRONTAB" '#30 5 1 \* \* root periodic monthly' || RC=1
+
+  exit "$RC"
+}
+_main;

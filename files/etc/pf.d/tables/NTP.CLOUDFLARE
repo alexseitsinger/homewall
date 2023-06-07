@@ -1,0 +1,16 @@
+#
+# /etc/pf.d/tables/NTP.CLOUDFLARE
+# (https://gist.github.com/mutin-sa/eea1c396b1e610a2da1e5550d94b0453)
+#
+
+# Cloudflare NTP [AS13335]
+#
+# time.cloudflare.com (as of 7/21/22)
+#
+#   162.159.200.123
+#   162.159.200.1
+#   2606:4700:f1::123
+#   2606:4700:f1::1
+#
+162.159.200.123
+162.159.200.1

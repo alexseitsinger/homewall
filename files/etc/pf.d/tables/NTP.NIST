@@ -1,0 +1,70 @@
+#
+# /etc/pf.d/tables/NTP.NIST
+# (https://gist.github.com/mutin-sa/eea1c396b1e610a2da1e5550d94b0453)
+#
+# NIST Internet Time Service (ITS) [AS49, AS104]
+#
+# time-a-g.nist.gov (as of 7/21/22)
+#   129.6.15.28
+#
+# time-b-g.nist.gov (as of 7/21/22)
+#   129.6.15.29
+#
+# time-c-g.nist.gov (as of 7/21/22)
+#   129.6.15.30
+#
+# time-d-g.nist.gov (as of 7/21/22)
+#   129.6.15.27
+#   2610:20:6f15:15::27
+#
+# time-a-wwv.nist.gov
+#   132.163.97.1
+#
+# time-b-wwv.nist.gov
+#   132.163.97.2
+#
+# time-c-wwv.nist.gov
+#   132.163.97.3
+#
+# time-d-wwv.nist.gov
+#   132.163.97.4
+#   2610:20:6f97:97::4
+#
+# time-a-b.nist.gov
+#   132.163.96.1
+#
+# time-b-b.nist.gov
+#   132.163.96.2
+#
+# time-c-b.nist.gov
+#   132.163.96.3
+#
+# time-d-b.nist.gov
+#   132.163.96.4
+#
+# time.nist.gov
+# (alias for ntp1.glb.nist.gov)
+#   129.139.140.44
+#   2610:20:6f15:15::26
+#
+# utcnist.colorado.edu
+#   128.138.140.44
+#
+# utcnist2.colorado.edu
+#   128.138.141.172
+#
+129.6.15.27
+129.6.15.28
+129.6.15.29
+129.6.15.30
+132.163.96.1
+132.163.96.2
+132.163.96.3
+132.163.96.4
+132.163.97.1
+132.163.97.2
+132.163.97.3
+132.163.97.4
+128.138.140.44
+128.138.141.172
+129.139.140.44

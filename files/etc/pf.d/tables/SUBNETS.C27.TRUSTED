@@ -1,0 +1,16 @@
+# routers
+192.168.1.0/27
+# servers
+192.168.1.32/27
+# jails
+192.168.1.64/27
+# trusted admin
+192.168.1.96/27
+# trusted workstations 
+192.168.1.128/27
+# unused
+#192.168.1.160/27
+# untrusted media (ps3, ipad) 
+#192.168.1.192/27
+# untrusted guests
+#192.168.1.224/27

@@ -1,0 +1,36 @@
+#!/bin/sh -
+
+builtin . /etc/shrc
+
+_main() {
+  local SYSTEM_DIR=$( sysdir );
+
+  local RC=0
+  local RC_CONF="${SYSTEM_DIR}/files/etc/rc.conf.local";
+  local L1='hostname="homewall.home.lan"';
+  local L2='pf_rules="/etc/pf.d/pf.conf"';
+  local L3='kern_securelevel="3"';
+  local L4='kern_securelevel_enable="YES"';
+  local L5='gateway_enable="YES"';
+  local L6='ifconfig_ext0="DHCP group egress"';
+  local L7='ifconfig_int0="inet 192.168.1.254/24 group ingress"';
+
+  ## ASSERTIONS-BEGIN ##
+
+  assert "${RC_CONF} is a file" test -f "$RC_CONF" || RC=1
+  assert "${RC_CONF} has the owner: root:wheel" is-owner "$RC_CONF" root:wheel || RC=1
+  assert "${RC_CONF} has the mode: u=rw,go=r" is-mode "$RC_CONF" u=rw,go=r || RC=1
+  assert "${RC_CONF} has the flag: schg" is-flag "$RC_CONF" schg || RC=1
+  assert "${RC_CONF} has the line: ${L1}" is-line-included "$RC_CONF" "$L1" || RC=1
+  assert "${RC_CONF} has the line: ${L2}" is-line-included "$RC_CONF" "$L2" || RC=1
+  assert "${RC_CONF} has the line: ${L3}" is-line-included "$RC_CONF" "$L3" || RC=1
+  assert "${RC_CONF} has the line: ${L4}" is-line-included "$RC_CONF" "$L4" || RC=1
+  assert "${RC_CONF} has the line: ${L5}" is-line-included "$RC_CONF" "$L5" || RC=1
+  assert "${RC_CONF} has the line: ${L6}" is-line-included "$RC_CONF" "$L6" || RC=1
+  assert "${RC_CONF} has the line: ${L7}" is-line-included "$RC_CONF" "$L7" || RC=1
+
+  ## ASSERTIONS-END ##
+
+  exit "$RC"
+}
+_main

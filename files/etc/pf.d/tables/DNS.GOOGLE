@@ -1,0 +1,7 @@
+#
+# /etc/pf.d/tables/DNS.GOOGLE
+#
+
+# Google (public) DNS
+4.4.4.4
+4.4.8.8

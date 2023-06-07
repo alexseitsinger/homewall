@@ -1,0 +1,39 @@
+#!/bin/sh -
+
+builtin . /etc/shrc
+
+_attach_var() {
+  local IMG='/work/systems/targets/homewall/images/var'
+  if ! is-attached "$IMG"; then
+    /sbin/mdconfig -at vnode -f "$IMG" -u 89124 >>/dev/null
+  fi
+}
+
+_attach_usr_local() {
+  local IMG='/work/systems/targets/homewall/images/usr_local'
+  if ! is-attached "$IMG"; then
+    /sbin/mdconfig -at vnode -f "$IMG" -u 89125 >>/dev/null
+  fi
+}
+
+_attach_home() {
+  local IMG='/work/systems/targets/homewall/images/home'
+  if ! is-attached "$IMG"; then
+    /sbin/mdconfig -at vnode -f "$IMG" -u 89126 >>/dev/null
+  fi
+}
+
+_attach_jails_thin() {
+  local IMG='/work/systems/targets/homewall/images/jails_thin'
+  if ! is-attached "$IMG"; then
+    /sbin/mdconfig -at vnode -f "$IMG" -u 89127 >>/dev/null
+  fi
+}
+
+_main() {
+  _attach_var || return 1
+  _attach_home || return 1
+  _attach_usr_local || return 1
+  _attach_jails_thin || return 1
+}
+_main;

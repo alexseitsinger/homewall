@@ -1,0 +1,7 @@
+#
+# /etc/devfs.rules
+#
+
+[jailrules=6]
+add include $devfsrules_jail_vnet
+add path 'bpf*' unhide

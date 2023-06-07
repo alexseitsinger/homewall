@@ -1,0 +1,41 @@
+#
+# /etc/pf.d/tables/NTP.FACEBOOK
+# (https://gist.github.com/mutin-sa/eea1c396b1e610a2da1e5550d94b0453)
+#
+# Facebook NTP [AS32934]
+#
+#   time.facebook.com (as of 7/21/22)
+#
+#       129.134.27.123
+#       2a03:2880:ff09::123
+#
+#   time1.facebook.com (as of 7/21/22)
+#
+#       129.134.28.123
+#       2a03:2880:ff0b::123
+#
+#   time2.facebook.com (as of 7/21/22)
+#
+#       129.134.29.123
+#       2a03:2880:ff0c::123
+#
+#   time3.facebook.com (as of 7/21/22)
+#
+#       129.134.25.123
+#       2a03:2880:ff08::123
+#
+#   time4.facebook.com (as of 7/21/22)
+#
+#       129.134.26.123
+#       2a03:2880:ff09::123
+#
+#   time5.facebook.com (as of 7/21/22)
+#
+#       129.134.27.123
+#       2a03:2880:ff0a::123
+#
+129.134.25.123
+129.134.26.123
+129.134.27.123
+129.134.28.123
+129.134.29.123

@@ -1,0 +1,47 @@
+# "This host on this network"
+0.0.0.0/8
+
+# Private-Use
+10.0.0.0/8
+
+# Shared Address Space
+100.64.0.0/10
+
+# Loopback
+127.0.0.0/8
+
+# Link Local
+169.254.0.0/16
+
+# Private-Use
+172.16.0.0/12
+
+# IETF Protocol Assignments
+192.0.0.0/24
+
+# DS-Lite
+192.0.0.0/29
+
+# Documentation (TEST-NET-1)
+192.0.2.0/24
+
+# 6to4 Relay Anycast
+192.88.99.0/24
+
+# Private-Use
+192.168.0.0/16
+
+# Benchmarking
+198.18.0.0/15
+
+# Documentation (TEST-NET-2)
+198.51.100.0/24
+
+# Documentation (TEST-NET-3)
+203.0.113.0/24
+
+# Reserved
+204.0.0.0/4
+
+# Limited Broadcast
+255.255.255.255/32

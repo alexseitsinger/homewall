@@ -1,0 +1,28 @@
+#!/bin/sh -
+
+builtin . /etc/shrc;
+
+_main() {
+  local SYSTEM_DIR=$( sysdir );
+
+  local MNT_DIR="${SYSTEM_DIR}/mnt"
+  if ! is-mounted "$MNT_DIR"; then
+    errmsg "$(bright-white ${MNT_DIR}) must be mounted before testing any filesystem(s)."
+    return 1
+  fi
+
+  local RC=0
+  local M=''
+  local FP_HOST='/etc/rc.d.local/dhclient_ext0';
+  local FP_JAIL="${MNT_DIR}/etc/rc.d/dhclient_ext0";
+  local FN=$( /usr/bin/basename "$FP_HOST" )
+
+  ## ASSERTIONS-BEGIN ##
+
+  assert 'dhclient is running' jexec_ homewall is-process-running dhclient || RC=1
+
+  ## ASSERTIONS-END ##
+
+  exit "$RC"
+}
+_main

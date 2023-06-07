@@ -1,0 +1,666 @@
+#!/bin/sh -
+#
+# *NOTES*
+# /etc/rc.d/newsyslog was removed in favor of this.
+# 
+
+# PROVIDE: newsyslog_logdirs
+# REQUIRE: FILESYSTEMS
+# BEFORE: utx syslogd pflog
+# KEYWORD: shutdown
+
+builtin . /etc/rc.subr;
+builtin . /etc/shrc;
+
+name='newsyslog_logdirs';
+desc='logfile rotation into hostname-based directory hierarchy';
+rcvar='newsyslog_logdirs_enable';
+start_cmd='start';
+stop_cmd='stop';
+rotate_all_logs_cmd='rotate_all_logs';
+extra_commands='rotate_all_logs';
+
+_rootdir() {
+    local THIS=$( /bin/realpath "$0" 2>>/dev/null );
+    if [ "$THIS" == "$SHELL" ]; then
+        errmsg '$(orange 'newsyslog_logdirs') should be executed, not sourced or evaluated.'; return 127;
+    fi
+    rootdir "$THIS"; 
+}
+
+_rcvar() {
+    local NAME="$1";
+    if [ -z "$NAME" ]; then
+        noarg '<$1: RC_VARIABLE_NAME>'; return 127;
+    fi
+    eval local VALUE="\$${NAME}";
+    if [ -n "$VALUE" ]; then
+        /bin/echo "$VALUE"; return 0;
+    fi
+    return 127;
+}
+
+_newsyslog() {
+    local CURRENT_DIR="$1";
+    if [ -z "$CURRENT_DIR" ]; then
+        noarg '<$1: CURRENT_DIR>'; return 127;
+    fi
+
+    local ROTATED_DIR="$2";
+
+    local CONF=$( _rcvar 'newsyslog_logdirs_conf' );
+    if [ -z "$CONF" ]; then
+        errmsg "$(orange 'newsyslog_logdirs_conf') must be specified."; return 127;
+    fi
+ 
+    local FLAGS=$( _rcvar 'newsyslog_logdirs_flags' );
+    if [ -z "$FLAGS" ]; then
+        errmsg "$(orange 'newsyslog_logdirs_flags') must be specified."; return 127;
+    fi
+
+    local CMD="builtin chdir ${CURRENT_DIR} && /usr/sbin/newsyslog ${FLAGS} -d ${CURRENT_DIR}";
+    if [ -n "$ROTATED_DIR" ]; then
+        CMD="${CMD} -a ${ROTATED_DIR}";
+    fi
+    run "$CMD";
+}
+
+# avoid type-checking here since it may not exist yet.
+
+logdir() {
+    #/bin/echo 'logdir' >>/dev/stderr;
+
+    local HN="$1";
+    if [ -z "$HN" ] || [ -e "$HN" ]; then
+        noarg '<$1: HN>'; return 127;
+    fi
+
+    local ROOTDIR=$( _rootdir );
+
+    normpath "${ROOTDIR}/var/logs/${HN}"; 
+}
+
+create_var_logs() {
+    #
+    # Construct the path to /var/logs.
+    #
+    local ROOTDIR=$( _rootdir );
+    local VAR_LOGS=$( normpath "${ROOTDIR}/var/logs" );
+
+    #
+    # If /var/logs doesn't exist, create it now.
+    # Make /var and /var/logs system-mutable and record their flag status.
+    #
+    if [ ! -d "$VAR_LOGS" ]; then
+        ( /usr/bin/umask 027; /bin/mkdir "$VAR_LOGS" );
+        /usr/sbin/chown root:logs "$VAR_LOGS";
+        /bin/chmod u=rwx,g=rx,o= "$VAR_LOGS";
+    fi
+    if [ ! -d "$VAR_LOGS" ]; then
+        errmsg "Creating $(bright-white ${VAR_LOGS}) failed."; return 127;
+    fi
+
+    #
+    # Return the path for use elsewhere.
+    #
+    /bin/echo "$VAR_LOGS";
+}
+
+create_logdir() {
+    local HN="$1";
+    if [ -z "$HN" ] || [ -e "$HN" ]; then
+        noarg '<$1: HN>'; return 127;
+    fi
+
+    # 
+    # Generate the path for the new /var/logs/<hostname>
+    # *TODO* make sure _logdir has visible errors 
+    # 
+    local DP=$( logdir "$HN" );
+    if [ ! -d "$DP" ]; then
+        ( /usr/bin/umask 027; /bin/mkdir -p "$DP" );
+        /usr/sbin/chown root:logs "$DP";
+        /bin/chmod u=rwx,g=rx,o= "$DP";
+    fi 
+    if [ ! -d "$DP" ]; then
+        errmsg "Creating $(bright-white ${DP}) failed."; return 127;
+    fi
+
+    #
+    # Unlock /var/logs/<hostname> so we can create:
+    # /var/logs/<hostname>/current
+    # /var/logs/<hostname>/rotated
+    #
+    local RC=0;
+
+    local CURRENT_DIR="${DP}/current";
+    if [ ! -d "$CURRENT_DIR" ]; then
+        ( /usr/bin/umask 027; /bin/mkdir -p "$CURRENT_DIR" );
+        /usr/sbin/chown root:logs "$CURRENT_DIR";
+        /bin/chmod u=rwx,g=rx,o= "$CURRENT_DIR";
+    fi
+    if [ ! -d "$CURRENT_DIR" ]; then
+        errmsg "Creating $(bright-white ${CURRENT_DIR}) failed."; 
+        RC=127;
+    fi
+
+    local ROTATED_DIR="${DP}/rotated";
+    if [ ! -d "$ROTATED_DIR" ]; then
+        ( /usr/bin/umask 027; /bin/mkdir "$ROTATED_DIR" );
+          /usr/sbin/chown root:logs "$ROTATED_DIR";
+          /bin/chmod u=rwx,g=rx,o= "$ROTATED_DIR";
+    fi
+    if [ ! -d "$ROTATED_DIR" ]; then
+        errmsg "Creating $(bright-white ${ROTATED_DIR}) failed.";
+        RC=127;
+    fi
+
+    #
+    # Return the paths we created for use elsewhere.
+    #
+    if [ "$RC" -eq 0 ]; then
+        /bin/echo "$CURRENT_DIR";
+        /bin/echo "$ROTATED_DIR";
+        return 0;
+    fi
+
+    #
+    # Else, return the error status.
+    #
+    return "$RC";   
+}
+
+create_logdirs() {
+    #
+    # e.g. /var/logs
+    #      /work/systems/targets/edge/mnt/var/logs
+    #
+    local VAR_LOGS=$( create_var_logs );
+    if [ ! -d "$VAR_LOGS" ]; then
+        errmsg "Creating $(bright-white '/var/logs') failed."; return 127;
+    fi
+
+    #
+    # Mount tmpfs to /var/logs if we're in secure mode.
+    # Otherwise, make the directory mutable.
+    #
+    if is-schg "$VAR_LOGS" && ! is-mounted-tmpfs "$VAR_LOGS"; then
+        /sbin/mount -t tmpfs tmpfs "$VAR_LOGS" || return 127
+    fi  
+
+    #
+    # Create a log directory for each UFS hostname specified.
+    # Skip hostnames listed for tmpfs--these are created somewhere else. 
+    #
+    local CONF=$( _rcvar 'newsyslog_logdirs_conf' );
+    if [ ! -f "$CONF" ]; then
+        notfile "$CONF"; return 127;
+    fi
+    local HNS_UFS=$( _rcvar 'newsyslog_logdirs_hostnames' );
+    #if [ -z "$HNS_UFS" ]; then
+    #    errmsg "$(orange 'newsyslog_logdirs_hostnames') is not set."; return 127;
+    #fi
+
+    local HNS_TMPFS=$( _rcvar 'newsyslog_logdirs_tmpfs_hostnames' );
+    local IFS=' '; for HN in ${HNS_TMPFS}; do
+        case *" ${HNS_UFS} "* in
+            *" ${HN} "*)
+                errmsg "Skipped creating $(orange 'tmpfs') log directories and files for $(orange ${HN}).";
+                errmsg "Hostnames specified in $(orange 'newsyslog_logdirs_hostnames') and $(orange 'newsyslog_logdirs_tmpfs_hostnames') are mutually exclusive.";
+                RC=1;
+                continue;
+            ;;
+        esac
+
+        LOGDIRS=$( create_logdir "$HN" );
+        CURRENT_DIR=$( /bin/echo "$LOGDIRS" | /usr/bin/head -n1 );
+        ROTATED_DIR=$( /bin/echo "$LOGDIRS" | /usr/bin/head -n2 | /usr/bin/tail -n1 );
+        if ! is-mounted-tmpfs "$CURRENT_DIR"; then
+            /sbin/mount -t tmpfs tmpfs "$CURRENT_DIR" || RC=1; continue
+        fi
+
+        ( builtin chdir "$CURRENT_DIR" && \
+          /usr/sbin/newsyslog -f "$CONF" -d "$CURRENT_DIR" -a "$ROTATED_DIR" -CCN ) 2>>/dev/null || RC=1
+    done
+
+    local RC=0;
+    local HN='';
+    local LOGDIRS='';
+    local CURRENT_DIR='';
+    local ROTATED_DIR='';
+    local IFS=' '; for HN in ${HNS_UFS}; do
+        case *" ${HNS_TMPFS} "* in
+            *" ${HN} "*)
+                errmsg "Skipped creating $(orange 'ufs') log directories and files for $(orange ${HN}).";
+                errmsg "Hostnames specified in $(orange 'newsyslog_logdirs_hostnames') and $(orange 'newsyslog_logdirs_tmpfs_hostnames') are mutually exclusive.";
+                RC=1;
+                continue;
+            ;;
+        esac
+
+        LOGDIRS=$( create_logdir "$HN" );
+        CURRENT_DIR=$( /bin/echo "$LOGDIRS" | /usr/bin/head -n1 );
+        ROTATED_DIR=$( /bin/echo "$LOGDIRS" | /usr/bin/head -n2 | /usr/bin/tail -n1 );
+
+        ( builtin chdir "$CURRENT_DIR" && \
+          /usr/sbin/newsyslog -f "$CONF" -d "$CURRENT_DIR" -a "$ROTATED_DIR" -CCN ) 2>>/dev/null || RC=1
+    done
+
+    return "$RC";
+}
+
+replace_var_log_symlink() {
+    local ROOTDIR=$( _rootdir );
+    local VAR=$( normpath "${ROOTDIR}/var" );
+    local VAR_LOG="${VAR}/log";
+    if [ -L "$VAR_LOG" ]; then
+        /bin/unlink "$VAR_LOG";
+    fi
+    if [ -L "$VAR_LOG" ]; then
+        errmsg "Removing the old symlink from $(bright-white ${VAR_LOG}) failed."; return 127;
+    fi
+    ( builtin chdir "$VAR" && /bin/ln -s ./logs/localhost/current log );
+    if [ ! -L "$VAR_LOG" ]; then
+        errmsg "Symlinking $(bright-white '/var/log') to $(bright-white '/var/logs/localhost/current') failed.";
+        return 127; 
+    fi
+}
+
+replace_var_logs_localhost_symlink() {
+    local ROOTDIR=$( _rootdir );
+    local VAR=$( normpath "${ROOTDIR}/var" );
+
+    local VAR_LOGS="${VAR}/logs";
+    if [ ! -d "$VAR_LOGS" ]; then
+        errmsg "Replacing /var/logs/localhost symlink failed--the directory /var/logs does not exist."; return 127;
+    fi
+
+    local VAR_LOGS_LOCALHOST="${VAR_LOGS}/localhost";
+    if [ -L "$VAR_LOGS_LOCALHOST" ]; then
+        /bin/unlink "$VAR_LOGS_LOCALHOST";
+    fi
+    if [ -L "$VAR_LOGS_LOCALHOST" ]; then
+        errmsg "Removing the old symlink from $(bright-white ${VAR_LOGS_LOCALHOST}) failed."; return 127;
+    fi
+
+    local HN=$( _rcvar 'hostname' );
+    if [ -z "$HN" ]; then
+        errmsg "Replacing /var/logs/localhost symlink failed--a fully qualified hostname must be set in /etc/rc.conf(.local)."; return 127;
+    fi
+    ( builtin chdir "$VAR_LOGS" && /bin/ln -s ./${HN} localhost );
+}
+
+mount_tmpfs_logdirs() {
+    local ROOTDIR=$( _rootdir );
+    local CONF=$( _rcvar 'newsyslog_logdirs_conf' );
+
+    local LOGDIRS='';
+    local CURRENT_DIR='';
+    local ROTATED_DIR='';
+    
+    local RC=0;
+
+    local HN='';
+    local IFS=' '; for HN in ${newsyslog_logdirs_tmpfs_hostnames}; do
+        # e.g. /var/logs/<hn>/current
+        #      /var/logs/<hn>/rotated
+        LOGDIRS=$( create_logdir "$HN" );
+        if [ -z "$LOGDIRS" ]; then
+            RC=127; continue;
+        fi
+
+        CURRENT_DIR=$( /bin/echo "$LOGDIRS" | /usr/bin/head -n1 );
+        if ! is-mounted-tmpfs "$CURRENT_DIR"; then
+            /sbin/mount -t tmpfs tmpfs "$CURRENT_DIR" || RC=127
+        fi
+
+        ROTATED_DIR=$( /bin/echo "$LOGDIRS" | /usr/bin/tail -n1 );
+        if ! is-mounted-tmpfs "$ROTATED_DIR"; then
+            /sbin/mount -t tmpfs tmpfs "$ROTATED_DIR" || RC=127
+        fi
+        
+        ( builtin chdir "$CURRENT_DIR" && \
+          /usr/sbin/newsyslog -f "$CONF" -d "$CURRENT_DIR" -a "$ROTATED_DIR" -CCN ) 
+    done
+
+    return "$RC";
+}
+
+open_files() {
+    local DP="${1:-/var/logs}";
+    ( /usr/bin/fstat | /usr/bin/grep -sE "$DP" | /usr/bin/awk '{ print $2 }' | /usr/bin/sort -diu ) 2>>/dev/null
+}
+
+close_files() {
+    local DP="${1:-/var/logs}";
+    local PNS=$( open_files "$DP" ); 
+    local IFS=$'\n'; for PN in ${PNS}; do
+        case $PN in
+            pflogd) PN='pflog';;
+        esac
+        /usr/sbin/service $PN stop || ( /bin/pgrep $PN | /usr/bin/xargs /bin/kill )
+    done 
+}
+
+unmount_tmpfs_logdirs() {
+    local LOGDIR='';
+    local CURRENT_DIR='';
+    local ROTATED_DIR='';
+    
+    local RC=0;
+
+    close_files /var/logs;
+
+    local HN='';
+    local HNS="$newsyslog_logdirs_tmpfs_hostnames";
+    local IFS=' '; for HN in ${HNS}; do
+        # e.g. /var/logs/<hn>
+        LOGDIR=$( logdir "$HN" );
+        if [ -z "$LOGDIR" ]; then
+            RC=127; continue;
+        fi
+
+        CURRENT_DIR="${LOGDIR}/current";
+        if is-mounted-tmpfs "$CURRENT_DIR"; then
+            /sbin/umount "$CURRENT_DIR" || RC=127
+        fi
+
+        ROTATED_DIR="${LOGDIR}/rotated";
+        if is-mounted-tmpfs "$ROTATED_DIR"; then
+            /sbin/umount "$ROTATED_DIR" || RC=127
+        fi
+    done
+
+    return "$RC";
+}
+
+_is_service() {
+    local NAME="$1";
+    if [ -z "$NAME" ]; then
+        noarg '<$1: NAME>'; return 127;
+    fi
+ 
+    local M=$( /usr/sbin/service -l | /usr/bin/grep -sE "^${NAME}$" );
+    if [ -n "$M" ]; then
+        return 0;
+    fi
+    return 1;
+}
+
+_conf() {
+    local HN="$1";
+    if [ -z "$HN" ] || [ -e "$HN" ]; then
+        noarg '<$1: HN>'; return 127;
+    fi
+
+    local ROOTDIR=$( _rootdir );
+    local DP=$( normpath "${ROOTDIR}/files/etc/newsyslog.conf.d" );
+    local FN=$( /bin/echo "$HN" | /usr/bin/tr '.' '-' );
+    local FP="${DP}/${FN}.conf";
+    if [ ! -f "$FP" ]; then
+        FN=$( /bin/echo "$HN" | /usr/bin/cut -d'.' -f1 );
+        FP="${DP}/${FN}.conf";
+    fi
+    if [ ! -f "$FP" ]; then
+        notfile "$FP"; return 127;
+    fi
+    
+    /bin/echo "$FP";
+}
+
+_is_shallow_log() {
+    local FP="$1";
+    if [ -z "$FP" ]; then
+        noarg '<$1: FP>'; return 127;
+    fi
+    if [ ! -f "$FP" ]; then
+        notfile "$FP"; return 127;
+    fi
+
+    # *TODO* regex pattern for other unimportant messages.
+    #        (e.g. mark message)
+    local P_A='logfile first created';
+    local P_B='logfile turned over due to';
+    local M=$( /usr/bin/grep -svE "(${P_A}|${P_B})" "$FP" ); 
+    if [ -z "$M" ]; then
+        return 0;
+    fi
+    return 1;
+}
+
+_rotate_log() {
+    local HN="$1";
+    if [ -z "$HN" ] || [ -e "$HN" ]; then
+        noarg '<$1: HN>'; return 127;
+    fi
+
+    local FN=$( /usr/bin/basename "$2" 2>>/dev/null );
+    if [ -z "$FN" ]; then
+        noarg '<$2: FN>'; return 127;
+    fi
+
+    local CONF=$( _conf "$HN" );
+    if [ -z "$CONF" ]; then
+        return 127;
+    fi
+
+    local ROOTDIR=$( _rootdir );
+    local LOGS_DIR=$( normpath "${ROOTDIR}/var/logs/${HN}" );
+    local CURRENT_DIR="${LOGS_DIR}/current";
+    local ROTATED_DIR="${LOGS_DIR}/rotated";
+    local TN="rotate_log:${FN}";
+    local FP="${CURRENT_DIR}/${FN}";
+
+    if _is_shallow_log "$FP"; then
+        warnmsg "Skipped rotating shallow logfile: $(bright-white ${FP})"; return 0;
+    else
+        warnmsg "Rotating logfile: $(bright-white ${FP})";
+    fi
+
+    #
+    # Construct the path (and create) the path to the destination directory.
+    #
+    local THIS_YEAR=$( /bin/date -j '+%Y' );
+    local THIS_MONTH=$( /bin/date -j '+%m' );
+    local THIS_DAY=$( /bin/date -j '+%d' );
+
+    local TARGET_DIR="${ROTATED_DIR}/${THIS_YEAR}/${THIS_MONTH}/${THIS_DAY}";
+    if [ ! -d "$TARGET_DIR" ]; then
+        ( /usr/bin/umask 027; \
+          /usr/sbin/chown root:logs "$TARGET_DIR"; \
+          /bin/chmod u=rwx,g=rx,o= "$TARGET_DIR"; \
+          /bin/mkdir -p "$TARGET_DIR" ) 2>>/dev/null
+    fi
+    if [ ! -d "$TARGET_DIR" ]; then
+        errmsg "Creating $(bright-white ${TARGET_DIR}) failed."; return 127;
+    fi
+
+    #
+    # Run newsyslog to rotate the logfile.
+    # 
+
+    local RC=0;
+    ( builtin chdir "$CURRENT_DIR"; \
+      /usr/sbin/newsyslog -f "$CONF" \
+                          -d "$CURRENT_DIR" \
+                          -a "$TARGET_DIR" \
+                          -R "$TN" \
+                          "$FN" ) || RC=127
+    return "$RC";
+}
+
+_rotate_logs() {
+    local HN="$1";
+    if [ -z "$HN" ] || [ -e "$HN" ]; then
+        noarg '<$1: HN>'; return 127;
+    fi
+
+    local ROOTDIR=$( _rootdir );
+    local LOGS_DIR=$( normpath "${ROOTDIR}/var/logs/${HN}" );
+    local CURRENT_DIR="${LOGS_DIR}/current";
+    local RC=0;
+    local FP='';
+    local FN='';
+    local FNS=$( /usr/bin/find "$CURRENT_DIR" -type f -maxdepth 1 -exec /usr/bin/basename {} \; );
+    local IFS=$'\n'; for FN in ${FNS}; do
+        _rotate_log "$HN" "$FN" || RC=127
+    done
+}
+
+rotate_all_logs() {
+    local RC=0;
+
+    /usr/sbin/service syslogd stop || return 127
+
+    local HN='';
+    local IFS=' '; for HN in ${newsyslog_logdirs_hostnames}; do
+        _rotate_logs "$HN" || RC=127
+    done
+
+    /usr/sbin/service syslogd start || RC=127 
+
+    return "$RC";
+}
+
+_symlink_logfiles() {
+    local CURRENT_DIR="$1";
+    if [ -z "$CURRENT_DIR" ]; then
+        #noarg '<$1: CURRENT_DIR>'; return 127;
+        return 1;
+    fi
+    if [ ! -d "$CURRENT_DIR" ]; then
+        #notdir "$CURRENT_DIR"; return 127;
+        return 1;
+    fi
+
+    local FN_SRC='';
+    local FP_SRC='';
+    local FN_DST='';
+    local FP_DST='';
+    local PAIR='';
+
+    local IFS=' '; for PAIR in ${newsyslog_logdirs_symlinked_logfiles}; do
+        FN_SRC=$( /bin/echo "$PAIR" | /usr/bin/cut -d':' -f1 );
+        FP_SRC="${CURRENT_DIR}/${FN_SRC}";
+
+        FN_DST=$( /bin/echo "$PAIR" | /usr/bin/cut -d':' -f2 );
+        FP_DST="${CURRENT_DIR}/${FN_DST}";
+
+        ( builtin chdir "$CURRENT_DIR" && /bin/ls -s "./${FN_SRC}" "$FN_DST" );
+    done
+}
+
+symlink_logfiles() {
+    local CURRENT_DIR="$1";
+    if [ -z "$CURRENT_DIR" ]; then
+        #noarg '<$1: CURRENT_DIR>'; return 127;
+        return 1;
+    fi
+    if [ ! -d "$CURRENT_DIR" ]; then
+        #notdir "$CURRENT_DIR"; return 127;
+        return 1;
+    fi
+
+    local RC=0;
+    local ROOTDIR=$( _rootdir );
+    local VAR_LOGS=$( normpath "${ROOTDIR}/var/logs" );
+    local FN_SRC='';
+    local FN_DST='';
+    local DP='';
+    local HN='';
+
+    local IFS=' '; for HN in ${newsyslog_logdirs_tmpfs_hostnames}; do
+        DP="${VAR_LOGS}/${HN}/current";
+        _symlink_logfiles "$DP" || RC=1
+    done
+
+    local IFS=' '; for HN in ${newsyslog_logdirs_hostnames}; do
+        DP="${VAR_LOGS}/${HN}/current";
+        _symlink_logfiles "$DP" || RC=1
+    done
+
+    return "$RC";
+}
+
+_unlink_logfiles() {
+    local CURRENT_DIR="$1";
+    if [ -z "$CURRENT_DIR" ]; then
+        #noarg '<$1: CURRENT_DIR>'; return 127;
+        return 1;
+    fi
+    if [ ! -d "$CURRENT_DIR" ]; then
+        #notdir "$CURRENT_DIR"; return 127;
+        return 1;
+    fi
+
+    local FN_SRC='';
+    local FP_SRC='';
+    local FN_DST='';
+    local FP_DST='';
+    local PAIR='';
+    local HN='';
+    local RC=0;
+
+    local IFS=' '; for PAIR in ${newsyslog_logdirs_symlinked_logfiles}; do
+        FN_SRC=$( /bin/echo "$PAIR" | /usr/bin/cut -d':' -f1 );
+        FP_SRC="${CURRENT_DIR}/${FN_SRC}";
+
+        FN_DST=$( /bin/echo "$PAIR" | /usr/bin/cut -d':' -f2 );
+        FP_DST="${CURRENT_DIR}/${FN_DST}";
+
+        if [ -L "$FP_DST" ]; then
+            /bin/unlink "$FP_DST" || RC=1
+        fi
+    done 
+
+    return "$RC";
+}
+
+unlink_logfiles() {
+    local ROOTDIR=$( _rootdir );
+    local VAR_LOGS=$( normpath "${ROOTDIR}/var/logs" );
+
+    local DP='';
+    local RC=0;
+
+    local HN='';
+    local IFS=' '; for HN in ${newsyslog_logdirs_tmpfs_hostnames}; do
+        DP="${VAR_LOGS}/${HN}/current";
+        _unlink_logfiles "$DP" || RC=1
+    done
+
+    local IFS=' '; for HN in ${newsyslog_logdirs_hostnames}; do
+        DP="${VAR_LOGS}/${HN}/current";
+        _unlink_logfiles "$DP" || RC=1
+    done
+
+    return "$RC";
+}
+
+stop() {
+    #/bin/echo 'unlink_logfiles';
+    unlink_logfiles || return 127
+
+    #/bin/echo 'unmount_tmpfs_logdirs';
+    unmount_tmpfs_logdirs || return 127
+}
+
+start() {
+    #/bin/echo 'replace_var_log_symlink';
+    replace_var_log_symlink || return 127
+
+    #/bin/echo 'replace_var_logs_localhost_symlink';
+    replace_var_logs_localhost_symlink || return 127
+
+    #/bin/echo 'create_logdirs';
+    create_logdirs || return 127
+
+    #/bin/echo 'mount_tmpfs_logdirs';
+    #mount_tmpfs_logdirs || return 127
+
+    #/bin/echo 'symlink_logfiles';
+    symlink_logfiles || return 127
+}
+
+load_rc_config "$name";
+run_rc_command "$1";

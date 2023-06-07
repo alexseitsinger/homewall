@@ -1,0 +1,40 @@
+#
+# /etc/pf.d/tables/NTP.APPLE
+# (https://gist.github.com/mutin-sa/eea1c396b1e610a2da1e5550d94b0453)
+#
+# Apple [AS714, AS6185]
+#
+#   time.apple.com (as of 7/21/22)
+#   (alias for time.g.aaplimg.com)
+#
+#       17.253.2.251
+#       17.253.20.253
+#       17.253.2.125
+#       2620:149:a33:3000::1f2
+#       2620:149:a10:4000::1f2
+#       2620:149:a33:3000::1e2
+#
+#   time1.apple.com
+#   time2.apple.com
+#   time3.apple.com
+#   time4.apple.com
+#   time5.apple.com
+#   time6.apple.com
+#   time7.apple.com
+#
+#   time.euro.apple.com (as of 7/21/22)
+#
+#       17.253.2.251
+#       17.253.20.125
+#       17.253.2.123
+#       17.253.2.253
+#       17.253.20.253
+#
+17.253.2.251
+17.253.20.253
+17.253.2.125
+17.253.2.251
+17.253.20.125
+17.253.2.123
+17.253.2.253
+17.253.20.253

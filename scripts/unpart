@@ -1,0 +1,16 @@
+#!/bin/sh -
+
+builtin . /etc/shrc;
+
+_main() {
+    local DEV="$1";
+    if [ -z "$DEV" ]; then
+        noarg '<$1: DEV>'; return 127;
+    fi
+    if [ ! -c "$DEV" ]; then
+        notfound "$DEV"; return 127;
+    fi
+
+    /sbin/gpart destroy -F ${DEV} || return 1
+}
+_main "$@";

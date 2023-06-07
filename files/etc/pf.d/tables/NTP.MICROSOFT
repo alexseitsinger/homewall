@@ -1,0 +1,12 @@
+#
+# /etc/pf.d/tables/NTP.MICROSOFT
+# (https://gist.github.com/mutin-sa/eea1c396b1e610a2da1e5550d94b0453)
+#
+
+# Microsoft [AS8075] 
+#
+#   time.windows.com (as of 7/21/22)
+#   (alias for twc.trafficmanager.net)
+#       168.61.215.74
+#
+168.61.215.74

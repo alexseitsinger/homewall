@@ -1,0 +1,14 @@
+#
+# /etc/pf.d/tables/PORTS.MAIL
+#
+# pop2: 109
+# pop3: 110
+# pop3s: 995
+# imap: 143
+# imaps: 993
+#
+109
+110
+995
+143
+993

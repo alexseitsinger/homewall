@@ -1,0 +1,6 @@
+#
+# /etc/pf.d/table/DHCP.COMCAST
+#
+
+# Comcast/XFinity DHCP server 
+96.120.65.101

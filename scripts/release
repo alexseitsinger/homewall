@@ -1,0 +1,57 @@
+#!/bin/sh -
+
+builtin . /etc/shrc
+
+_detach_usr_local() {
+  local IMG="/work/systems/targets/homewall/images/usr_local"
+  if is-attached "$IMG"; then
+    detach "$IMG"
+  fi
+}
+
+_detach_var() {
+  local IMG="/work/systems/targets/homewall/images/var"
+  if is-attached "$IMG"; then
+    detach "$IMG"
+  fi
+}
+
+_detach_home() {
+  local IMG="/work/systems/targets/homewall/images/home"
+  if is-attached "$IMG"; then
+    detach "$IMG"
+  fi
+}
+
+_detach_jails_thin() {
+  local IMG="/work/systems/targets/homewall/images/jails_thin"
+  if is-attached "$IMG"; then
+    detach "$IMG"
+  fi
+}
+
+_destroy_nics() {
+  if is-nic homewall_ale0; then
+    /sbin/ifconfig homewall_ale0 destroy
+  fi
+  if is-nic homewall_re0; then
+    /sbin/ifconfig homewall_re0 destroy
+  fi
+
+  if is-nic homewall_ext0; then
+    /sbin/ifconfig homewall_ext0 destroy;
+  fi
+  if is-nic homewall_int0; then
+    /sbin/ifconfig homewall_int0 destroy;
+  fi
+}
+
+_main() {
+  _detach_usr_local;
+  _detach_home;
+  _detach_var;
+  _detach_jails_thin;
+
+  _destroy_nics;
+}
+_main

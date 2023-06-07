@@ -1,0 +1,26 @@
+#!/bin/sh -
+
+builtin . /etc/shrc;
+
+_main() {
+  local SYSTEM_DIR=$( sysdir );
+
+  local RC=0;
+  local PF_CONF="${SYSTEM_DIR}/files/etc/pf.d/pf.conf";
+  local L1='nat log on egress from (ingress) to any -> (egress)';
+  local L2='pass out log on egress from (egress) to any';
+
+  ## ASSERTIONS-BEGIN ##
+
+  assert "${PF_CONF} is a file" test -f "$PF_CONF" || RC=1
+  assert "${PF_CONF} is owned by root:wheel" is-owner "$PF_CONF" root:wheel || RC=1
+  assert "${PF_CONF} has the mode u=rw,go=" is-mode "$PF_CONF" u=rw,go= || RC=1
+  assert "${PF_CONF} has the schg flag" is-flag "$PF_CONF" schg || RC=1
+  assert "${PF_CONF} has the line: ${L1}" is-line-included "$PF_CONF" "$L1" || RC=1
+  assert "${PF_CONF} has the line: ${L2}" is-line-included "$PF_CONF" "$L2" || RC=1
+
+  ## ASSERTIONS-END ##
+
+  exit "$RC";
+}
+_main;

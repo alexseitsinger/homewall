@@ -1,0 +1,36 @@
+#!/bin/sh -
+
+builtin . /etc/shrc;
+
+_main() {
+  local SYSTEM_DIR=$( sysdir );
+
+  local MNT_DIR="${SYSTEM_DIR}/mnt";
+  if ! is-mounted "$MNT_DIR"; then
+    errmsg "$(bright-white ${MNT_DIR}) must be mounted before testing any filesystem(s)."; return 1;
+  fi
+
+  local RC=0;
+
+  local DB_DIR="${MNT_DIR}/var/db";
+  local ENTROPY_DIR="${DB_DIR}/entropy";
+  assert "${ENTROPY_DIR} is a directory" test -d "$ENTROPY_DIR" || RC=1
+  assert "${ENTROPY_DIR} has the mode: u=rwx,go=" is-mode "$ENTROPY_DIR" u=rwx,go= || RC=1
+  assert "${ENTROPY_DIR} has the owner: operator:operator" is-owner "$ENTROPY_DIR" operator:operator || RC=1
+  assert "${ENTROPY_DIR} lacks the flag: schg" is-flag "$ENTROPY_DIR" noschg || RC=1
+
+  local ENTROPY_EARLY="${ENTROPY_DIR}/entropy.boot";
+  assert "${ENTROPY_EARLY} is a file" test -f "$ENTROPY_EARLY" || RC=1
+  assert "${ENTROPY_EARLY} has the mode: u=rw,go=" is-mode "$ENTROPY_EARLY" u=rw,go= || RC=1
+  assert "${ENTROPY_EARLY} has the owner: root:wheel" is-owner "$ENTROPY_EARLY" root:wheel || RC=1
+  assert "${ENTROPY_EARLY} lacks the flag: schg" is-flag "$ENTROPY_EARLY" noschg || RC=1
+
+  local ENTROPY_LATE="${ENTROPY_DIR}/entropy";
+  assert "${ENTROPY_LATE} is a file" test -f "$ENTROPY_LATE" || RC=1
+  assert "${ENTROPY_LATE} has the mode: u=rw,go=" is-mode "$ENTROPY_LATE" u=rw,go= || RC=1
+  assert "${ENTROPY_LATE} has the owner: root:wheel" is-owner "$ENTROPY_LATE" root:wheel || RC=1
+  assert "${ENTROPY_LATE} lacks the flag: schg" is-flag "$ENTROPY_LATE" noschg || RC=1
+
+  exit "$RC";
+}
+_main;

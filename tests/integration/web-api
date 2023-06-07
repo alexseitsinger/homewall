@@ -1,0 +1,63 @@
+#!/bin/sh -
+
+builtin . /etc/shrc;
+
+_main() {
+  local SYSTEM_DIR=$( sysdir );
+
+  local MNT_DIR="${SYSTEM_DIR}/mnt";
+  if ! is-mounted "$MNT_DIR"; then
+    errmsg "$(bright-white ${MNT_DIR}) must be mounted before testing any filesystem(s)."; return 1;
+  fi
+
+  local RC=0;
+  local HOST='192.168.1.253';
+  local PORT_NGINX='80';
+  local PORT_NODE='3000';
+  local ADDR_NGINX="127.0.0.1:${PORT_NGINX}";
+  local ADDR_NODE="127.0.0.1:${PORT_NODE}";
+
+  if ! is-nic br0; then
+    # Create a new bridge so we can communicate with the jail interface.
+    /sbin/ifconfig bridge create name br0 >>/dev/null || return 1
+  fi
+  if ! is-nic-addr em0 192.168.1.100/24; then
+    /sbin/ifconfig em0 192.168.1.100/24 || return 1
+  fi
+  if ! is-bridge-member br0 em0; then
+    /sbin/ifconfig br0 addm em0 up || return 1
+  fi
+  if ! is-bridge-member br0 homewall_re0; then
+    /sbin/ifconfig br0 addm homewall_re0 up || return 1
+  fi
+
+  ## ASSERTIONS-BEGIN ##
+
+  # if node isn't running, but nginx is (as a reverse proxy), it returns 502: Bad Gateway.
+  # Otherwise, it should return: 200: Success.
+  #
+  # Exit early if either of these fail as they are required for the others to pass.
+  #
+  assert "nginx is listening on ${ADDR_NGINX}" jexec_ homewall is-process-listening nginx ${ADDR_NGINX} || exit 1 
+  assert "node is listening on ${ADDR_NODE}" jexec_ homewall is-process-listening node ${ADDR_NODE} || exit 1
+
+  # Confirm that the web API is (in)accessible from the expected address.
+  #
+  # *NOTE* these commands need to run from outside the jail.
+  #
+  assert "the web api is accessible from http://${HOST}:${PORT_NGINX}" is-http-status-code ${HOST}:${PORT_NGINX} 200 || RC=1
+  assert "the web api is NOT accessible from http://${HOST}:${PORT_NODE}" is-http-status-code ${HOST}:${PORT_NODE} 0 || RC=1
+
+  ## ASSERTIONS-END ##
+
+  if is-nic-addr em0 192.168.1.100/24; then
+    /sbin/ifconfig em0 inet 192.168.1.100/24 delete;
+  fi
+  if is-nic br0; then
+    /sbin/ifconfig br0 destroy;
+  fi
+
+  exit "$RC";
+}
+_main;
+

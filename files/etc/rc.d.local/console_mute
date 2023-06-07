@@ -1,0 +1,30 @@
+#!/bin/sh -
+
+# PROVIDE: console_mute
+
+builtin . /etc/rc.subr
+
+name='console_mute';
+rcvar='console_mute_enable';
+desc='prevent /dev/ttyv0 from being polluted with messages from /dev/console.';
+start_cmd='_start';
+stop_cmd='_stop';
+
+_start() {
+    if [ ! -x /sbin/conscontrol ]; then
+        /bin/echo '/sbin/conscontrol is not executable or does not exist.' >>/dev/stderr; return 1;
+    fi
+    /sbin/conscontrol mute on >>/dev/null 2>&1 || return 1
+    /bin/echo '/dev/console muted.' >>/dev/stderr;
+}
+
+_stop() {
+    if [ ! -x /sbin/conscontrol ]; then
+        /bin/echo '/sbin/conscontrol is not executable or does not exist.' >>/dev/stderr; return 1;
+    fi
+    /sbin/conscontrol mute off >>/dev/null 2>&1 || return 1
+    /bin/echo '/dev/console unmuted.' >>/dev/stderr;
+}
+
+load_rc_config "$name";
+run_rc_command "$1";
