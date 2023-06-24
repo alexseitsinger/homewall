@@ -1,4 +1,7 @@
 #!/bin/sh -
+#
+# Fuck comments
+#
 
 builtin . /etc/shrc
 
@@ -30,10 +33,21 @@ _attach_jails_thin() {
   fi
 }
 
+_attach_files() {
+  local IMG='/work/systems/targets/homewall/images/files'
+  if ! is-attached "$IMG"; then
+    /sbin/mdconfig -at vnode -f "$IMG" -u 89128 >>/dev/null;
+  fi
+}
+
 _main() {
-  _attach_var || return 1
-  _attach_home || return 1
-  _attach_usr_local || return 1
-  _attach_jails_thin || return 1
+  local IS_JAILED=$( /sbin/sysctl -qien security.jail.jailed );
+  if [ "$IS_JAILED" -ne 1 ]; then
+    _attach_var || return 1
+    _attach_home || return 1
+    _attach_usr_local || return 1
+    _attach_jails_thin || return 1
+    _attach_files || return 1
+  fi
 }
 _main;

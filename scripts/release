@@ -1,4 +1,8 @@
 #!/bin/sh -
+#
+# Still fuck comments
+# And fuck vim's undo
+#
 
 builtin . /etc/shrc
 
@@ -30,6 +34,13 @@ _detach_jails_thin() {
   fi
 }
 
+_detach_files() {
+  local IMG='/work/systems/targets/homewall/images/files';
+  if is-attached "$IMG"; then
+    detach "$IMG";
+  fi
+}
+
 _destroy_nics() {
   if is-nic homewall_ale0; then
     /sbin/ifconfig homewall_ale0 destroy
@@ -47,10 +58,14 @@ _destroy_nics() {
 }
 
 _main() {
-  _detach_usr_local;
-  _detach_home;
-  _detach_var;
-  _detach_jails_thin;
+  local IS_JAILED=$( /sbin/sysctl -qien security.jail.jailed );
+  if [ "$IS_JAILED" -ne 1 ]; then
+    _detach_files;
+    _detach_usr_local;
+    _detach_home;
+    _detach_var;
+    _detach_jails_thin;
+  fi
 
   _destroy_nics;
 }
