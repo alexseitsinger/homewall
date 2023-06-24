@@ -16,7 +16,8 @@ ifconfig_ale0_name="ext0"
 ifconfig_ext0="DHCP group egress"
 
 ifconfig_re0_name="int0"
-ifconfig_int0="inet 192.168.1.253/24 group ingress"
+#ifconfig_int0="inet 192.168.1.253/24 group ingress"
+ifconfig_int0="inet 192.168.1.254/24 group ingress"
 
 gateway_enable="YES"
 
