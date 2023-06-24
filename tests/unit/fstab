@@ -1,4 +1,7 @@
 #!/bin/sh -
+#
+# Confirm that the USB drive uses the correct fstab.
+#
 
 builtin . /etc/shrc;
 

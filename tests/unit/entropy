@@ -1,4 +1,7 @@
 #!/bin/sh -
+#
+# Confirm that early and late entropy files are accessible.
+#
 
 builtin . /etc/shrc;
 
