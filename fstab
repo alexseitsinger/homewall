@@ -1,11 +1,3 @@
-/work/systems/bases/HOMEWALL-13.1/mnt /work/systems/targets/homewall/mnt nullfs rw 0 1
-#/work/systems/bases/HOMEWALL-13.1/mnt /work/systems/targets/homewall/mnt/jails/base nullfs rw 0 1
-/work/systems/targets/homewall/files /work/systems/targets/homewall/mnt/files nullfs rw 0 2
-/dev/md89124 /work/systems/targets/homewall/mnt/var ufs rw 0 2
-/dev/md89125 /work/systems/targets/homewall/mnt/usr/local ufs rw 0 2
-/dev/md89126 /work/systems/targets/homewall/mnt/home ufs rw 0 2
-#/dev/md89127 /work/systems/targets/homewall/mnt/files ufs rw 0 2
-#/dev/md89127 /work/systems/targets/homewall/mnt/jails/thin ufs rw 0 2
 tmpfs /work/systems/targets/homewall/mnt/tmp tmpfs rw,mode=1777,noexec,nosuid 0 0
 tmpfs /work/systems/targets/homewall/mnt/var/run tmpfs rw,nosuid 0 0
 tmpfs /work/systems/targets/homewall/mnt/var/logs tmpfs rw,noexec,nosuid 0 0

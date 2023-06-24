@@ -176,12 +176,23 @@ _umount_out() {
   # e.g. usr/local
   #local REM_PATH=$( echo "$TARGET_DIR" | /usr/bin/sed -E "s|^(\/.+)+\/${TARGET_NAME}(\/mnt)?\/?||g" );
 
-  sudo bastille umount ${JAIL_NAME} ${JAIL_PATH}/mnt/files || return 1
-  sudo bastille umount ${JAIL_NAME} ${JAIL_PATH}/mnt/home || return 1
-  sudo bastille umount ${JAIL_NAME} ${JAIL_PATH}/mnt/usr/local || return 1
-  sudo bastille umount ${JAIL_NAME} ${JAIL_PATH}/mnt/var || return 1
-  sudo bastille umount ${JAIL_NAME} ${JAIL_PATH}/mnt || return 1
-  sudo bastille umount ${JAIL_NAME} ${JAIL_PATH} || return 1
+  #sudo bastille umount ${JAIL_NAME} ${JAIL_PATH}/mnt/files || return 1
+  #sudo bastille umount ${JAIL_NAME} ${JAIL_PATH}/mnt/home || return 1
+  #sudo bastille umount ${JAIL_NAME} ${JAIL_PATH}/mnt/usr/local || return 1
+  #sudo bastille umount ${JAIL_NAME} ${JAIL_PATH}/mnt/var || return 1
+  #sudo bastille umount ${JAIL_NAME} ${JAIL_PATH}/mnt || return 1
+  #sudo bastille umount ${JAIL_NAME} ${JAIL_PATH} || return 1
+
+  local BASTILLE_ROOT="/usr/local/bastille/jails/${JAIL_NAME}/root";
+  if is-mounted ${BASTILLE_ROOT}/${JAIL_PATH}; then
+    /sbin/umount ${BASTILLE_ROOT}/${JAIL_PATH} || return 1
+  fi
+
+  #/sbin/umount ${JAIL_PATH}/mnt/var || return 1
+  #/sbin/umount ${JAIL_PATH}/mnt/home || return 1
+  #/sbin/umount ${JAIL_PATH}/mnt/usr/local || return 1
+  #/sbin/umount ${JAIL_PATH}/mnt/files || return 1
+  #/sbin/umount ${JAIL_PATH} || return 1
 }
 
 _mount_in() {
@@ -202,12 +213,35 @@ _mount_in() {
   # e.g. usr/local
   #local REM_PATH=$( echo "$TARGET_DIR" | /usr/bin/sed -E "s|^(\/.+)+\/${TARGET_NAME}(\/mnt)?\/?||g" );
 
-  sudo bastille mount ${JAIL_NAME} ${TARGET_DIR} ${JAIL_PATH} nullfs rw 0 0 || return 1
-  sudo bastille mount ${JAIL_NAME} ${TARGET_DIR}/mnt ${JAIL_PATH}/mnt nullfs rw 0 0 || return 1
-  sudo bastille mount ${JAIL_NAME} ${TARGET_DIR}/mnt/var ${JAIL_PATH}/mnt/var nullfs rw 0 0 || return 1
-  sudo bastille mount ${JAIL_NAME} ${TARGET_DIR}/mnt/usr/local ${JAIL_PATH}/mnt/usr/local nullfs rw 0 0 || return 1
-  sudo bastille mount ${JAIL_NAME} ${TARGET_DIR}/mnt/home ${JAIL_PATH}/mnt/home nullfs rw 0 0 || return 1
-  sudo bastille mount ${JAIL_NAME} ${TARGET_DIR}/mnt/files ${JAIL_PATH}/mnt/files nullfs rw 0 0 || return 1
+  #sudo bastille mount ${JAIL_NAME} ${TARGET_DIR} ${JAIL_PATH} nullfs rw 0 0 || return 1
+  #sudo bastille mount ${JAIL_NAME} ${TARGET_DIR}/mnt ${JAIL_PATH}/mnt nullfs rw 0 0 || return 1
+  #sudo bastille mount ${JAIL_NAME} ${TARGET_DIR}/mnt/var ${JAIL_PATH}/mnt/var nullfs rw 0 0 || return 1
+  #sudo bastille mount ${JAIL_NAME} ${TARGET_DIR}/mnt/usr/local ${JAIL_PATH}/mnt/usr/local nullfs rw 0 0 || return 1
+  #sudo bastille mount ${JAIL_NAME} ${TARGET_DIR}/mnt/home ${JAIL_PATH}/mnt/home nullfs rw 0 0 || return 1
+  #sudo bastille mount ${JAIL_NAME} ${TARGET_DIR}/mnt/files ${JAIL_PATH}/mnt/files nullfs rw 0 0 || return 1
+
+  local BASTILLE_ROOT="/usr/local/bastille/jails/${JAIL_NAME}/root";
+  local DST_DIR="${BASTILLE_ROOT}/${JAIL_PATH}";
+
+  # homewall -> dev0:/work/systems/targets/homewall
+  if ! is-mounted ${DST_DIR}; then
+  /sbin/mount -t nullfs -o rw ${TARGET_DIR} ${DST_DIR} || return 1
+  fi
+  if ! is-mounted ${DST_DIR}/files; then
+    /sbin/mount -t nullfs -o rw ${TARGET_DIR}/files ${DST_DIR}/files || return 1
+  fi
+
+  # bases/HOMEWALL-13.1/mnt -> dev0:bases/HOMEWALL-13.1
+  # bases/HOMEWALL-13.1/mnt -> dev0:bases/HOMEWALL-13.1/mnt
+  if ! is-mounted ${DST_DIR}/mnt; then
+    #/sbin/mount -t nullfs -o rw ${TARGET_DIR}/BASE/mnt ${DST_DIR}/mnt || return 1
+  fi
+  #/sbin/mount -t nullfs -o rw ${TARGET_DIR}/files ${BASTILLE_ROOT}/${JAIL_PATH
+  #/sbin/mount -t nullfs -o rw ${TARGET_DIR}/files ${JAIL_PATH}/mnt/files || return 1
+  #/sbin/mount -t nullfs -o rw ${TARGET_DIR}/mnt ${JAIL_PATH}/mnt || return 1
+  #/sbin/mount -t nullfs -o rw ${TARGET_DIR}/mnt/var ${JAIL_PATH}/mnt/var || return 1
+  #/sbin/mount -t nullfs -o rw ${TARGET_DIR}/mnt/usr/local ${JAIL_PATH}/mnt/usr/local || return 1
+  #/sbin/mount -t nullfs -o rw ${TARGET_DIR}/mnt/home ${JAIL_PATH}/mnt/home || return 1
 }
 
 _usage() {
