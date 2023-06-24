@@ -58,8 +58,11 @@ _destroy_nics() {
 }
 
 _main() {
-  local IS_JAILED=$( /sbin/sysctl -qien security.jail.jailed );
-  if [ "$IS_JAILED" -ne 1 ]; then
+  local IS_JAIL=$( /sbin/sysctl -qien security.jail.jailed );
+
+  # Mounting chardevs within any jail always returns Operating not permitted so
+  # we have to do this shit from the host, first.
+  if [ "$IS_JAIL" -ne 1 ]; then
     _detach_files;
     _detach_usr_local;
     _detach_home;
@@ -67,6 +70,10 @@ _main() {
     _detach_jails_thin;
   fi
 
-  _destroy_nics;
+  # We only want to setup the jail's filesystem when we're on the host.
+  # Once we're in the bastille jail we can create and destroy these nics.
+  if [ "$IS_JAIL" -eq 1 ]; then
+    _destroy_nics || return 1
+  fi
 }
 _main

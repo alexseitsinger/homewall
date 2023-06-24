@@ -40,7 +40,18 @@ _attach_files() {
   fi
 }
 
+_start_base_jail() {
+  local TARGET_JAIL_DIR=$( /usr/bin/dirname $( /usr/bin/dirname $( /bin/realpath "$0" )));
+  local BASE_JAIL_DIR=$( /bin/realpath "${TARGET_JAIL_DIR}/BASE" );
+  local BASE_JAIL_NAME=$( /usr/bin/basename "$BASE_JAIL_DIR" | /usr/bin/sed -E 's|[-.]|_|g' );
+
+  if ! is-jail-running ${BASE_JAIL_NAME}; then
+    /usr/sbin/jail -f ${BASE_JAIL_DIR}/jail.conf -c ${BASE_JAIL_NAME} || return 1
+  fi
+}
+
 _main() {
+  echo "scripts/prepare"
   local IS_JAILED=$( /sbin/sysctl -qien security.jail.jailed );
   if [ "$IS_JAILED" -ne 1 ]; then
     _attach_var || return 1
@@ -48,6 +59,9 @@ _main() {
     _attach_usr_local || return 1
     _attach_jails_thin || return 1
     _attach_files || return 1
+  fi
+  if [ "$IS_JAILED" -ne 1 ]; then
+    #_start_base_jail || return 1
   fi
 }
 _main;

@@ -12,6 +12,12 @@ _create_nics() {
 }
 
 _main() {
-  _create_nics || return 1
+  # Only attempt to create the nics when we're alreayd within a jail env.
+  # When we're on the host system, we only want to setup the jails filesystem
+  # so it can be null-mounted into the bastille jail, dev0.
+  local IS_JAIL=$( /sbin/sysctl -qien security.jail.jailed );
+  if [ "$IS_JAIL" -eq 1 ]; then
+    _create_nics || return 1
+  fi
 }
 _main;
