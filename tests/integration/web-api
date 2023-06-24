@@ -11,27 +11,43 @@ _main() {
   fi
 
   local RC=0;
-  local HOST='192.168.1.253';
+  #local HOST='192.168.1.253';
+ # local HOST=$( IFCONFIG_FORMAT=inet:cidr /sbin/ifconfig int0 | \
+                #/usr/bin/head -n6 | \
+                #/usr/bin/tail -n1 | \
+                #/usr/bin/xargs | \
+                #/usr/bin/cut -d' ' -f2 | \
+                #/usr/bin/sed -E 's|\/[[:digit:]]{1,2}$||' );
+
+  local HOST_ALIAS='192.168.1.100';
+  local HOST_ALIAS_CIDR="${HOST_ALIAS}/24";
+  local JAIL_ADDR='192.168.1.254';
+  local JAIL_ADDR_CIDR="${JAIL_ADDR}/24";
   local PORT_NGINX='80';
   local PORT_NODE='3000';
   local ADDR_NGINX="127.0.0.1:${PORT_NGINX}";
   local ADDR_NODE="127.0.0.1:${PORT_NODE}";
 
-  if ! is-nic br0; then
+  if ! is-nic-addr ext0 ${HOST_ALIAS_CIDR}; then
+    /sbin/ifconfig ext0 alias ${HOST_ALIAS_CIDR} || return 1
+  fi
+  if ! is-nic ext0bridge; then
     # Create a new bridge so we can communicate with the jail interface.
-    /sbin/ifconfig bridge create name br0 >>/dev/null || return 1
+    # created by scripts/created
+    /sbin/ifconfig bridge create name ext0bridge >>/dev/null || return 1
   fi
-  if ! is-nic-addr em0 192.168.1.100/24; then
-    /sbin/ifconfig em0 192.168.1.100/24 || return 1
+  if ! is-bridge-member ext0bridge ext0; then
+    /sbin/ifconfig ext0bridge addm ext0 up || return 1
   fi
-  if ! is-bridge-member br0 em0; then
-    /sbin/ifconfig br0 addm em0 up || return 1
-  fi
-  if ! is-bridge-member br0 homewall_re0; then
+  # re0 is the int0 interface (before renamed to int0)
+  # created by scripts/created
+  if ! is-bridge-member ext0bridge homewall_re0; then
     /sbin/ifconfig br0 addm homewall_re0 up || return 1
   fi
 
   ## ASSERTIONS-BEGIN ##
+
+  assert "int0 inet ${JAIL_ADDR_CIDR}" jexec_ homewall is-nic-addr int0 ${JAIL_ADDR_CIDR} || exit 1 
 
   # if node isn't running, but nginx is (as a reverse proxy), it returns 502: Bad Gateway.
   # Otherwise, it should return: 200: Success.
@@ -45,16 +61,17 @@ _main() {
   #
   # *NOTE* these commands need to run from outside the jail.
   #
-  assert "the web api is accessible from http://${HOST}:${PORT_NGINX}" is-http-status-code ${HOST}:${PORT_NGINX} 200 || RC=1
-  assert "the web api is NOT accessible from http://${HOST}:${PORT_NODE}" is-http-status-code ${HOST}:${PORT_NODE} 0 || RC=1
+  assert "the web api is accessible from http://${JAIL_ADDR}:${PORT_NGINX}" is-http-status-code ${JAIL_ADDR}:${PORT_NGINX} 200 || RC=1
+  assert "the web api is NOT accessible from http://${JAIL_ADDR}:${PORT_NODE}" is-http-status-code ${JAIL_ADDR}:${PORT_NODE} 0 || RC=1
 
   ## ASSERTIONS-END ##
 
-  if is-nic-addr em0 192.168.1.100/24; then
-    /sbin/ifconfig em0 inet 192.168.1.100/24 delete;
+  # Remove the temporary alias so we can communicate with int0 subnet in homewall.
+  if is-nic-addr ext0 ${HOST_ALIAS_CIDR}; then
+    /sbin/ifconfig ext0 ${HOST_ALIAS_CIDR} delete;
   fi
-  if is-nic br0; then
-    /sbin/ifconfig br0 destroy;
+  if is-bridge-memberless ext0bridge; then
+    /sbin/ifconfig ext0bridge destroy || return 1
   fi
 
   exit "$RC";
