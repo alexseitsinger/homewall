@@ -10,7 +10,7 @@ _main() {
   local L1='ifconfig_ale0_name="ext0"';
   local L2='ifconfig_re0_name="int0"';
   local L3='ifconfig_ext0="DHCP group egress"';
-  local L4='ifconfig_int0="inet 192.168.1.253/24 group ingress"';
+  local L4='ifconfig_int0="inet 192.168.1.254/24 group ingress"';
   local RC=0;
 
   ## ASSERTIONS-BEGIN ##
