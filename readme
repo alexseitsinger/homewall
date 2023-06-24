@@ -1,0 +1,12 @@
+1. Mount the filesystems on the host.
+  jail -f /work/systems/bases/HOMEWALL-13.1/jail.conf -c HOMEWALL_13_1
+  jail -f /work/systems/targets/homewall/jail.conf -c homewall
+
+2. Start the development jail.
+  bastille start dev0
+
+3a. Null-mount the filesystems from the host into the bastille jail.
+  /work/systems/targets/homewall/manage.sh mount-in dev0
+
+3b. Unmount the filesystems from within the bastille jail.
+  /work/systems/targets/homewall/manage.sh umount-out dev0
